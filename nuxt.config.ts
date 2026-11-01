@@ -1,4 +1,19 @@
+import { cpSync, statSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { THEMES } from './app/data/themes'
+
+// Navara loads its workers via `new URL('assets/...', import.meta.url)` in pre-built
+// code, which Vite neither rewrites nor emits. Copy them next to the chunks, where
+// those URLs resolve. The data subdirectories (atmosphere, clouds, ...) are skipped:
+// they are only needed by the photoreal sky / stars / clouds descriptors, which the
+// maps avoid for their size (~8 MB for the atmosphere alone).
+const NAVARA_ASSETS = 'node_modules/@navaramap/three/dist/assets'
+
+function isNavaraAssetUsed(src: string): boolean {
+  const path = relative(NAVARA_ASSETS, src)
+  if (path === '') return true
+  return !path.includes('/') && !path.endsWith('.map') && statSync(src).isFile()
+}
 
 // Switch baseURL for GitHub Pages (https://<user>.github.io/<repo>/).
 // The GitHub Actions workflow sets NUXT_APP_BASE_URL=/<repo>/.
@@ -31,6 +46,13 @@ export default defineNuxtConfig({
     prerender: {
       // Prerender all 30 day pages
       routes: ['/', ...THEMES.map((t) => `/day/${t.day}`)],
+    },
+  },
+
+  hooks: {
+    'nitro:build:public-assets'(nitro) {
+      const dest = join(nitro.options.output.publicDir, nitro.options.runtimeConfig.app.buildAssetsDir, 'assets')
+      cpSync(NAVARA_ASSETS, dest, { recursive: true, filter: isNavaraAssetUsed })
     },
   },
 
