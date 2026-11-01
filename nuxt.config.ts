@@ -24,7 +24,7 @@ export default defineNuxtConfig({
     },
   },
 
-  css: ['maplibre-gl/dist/maplibre-gl.css', '~/assets/main.css'],
+  css: ['~/assets/main.css'],
 
   nitro: {
     preset: 'github-pages',

@@ -2,6 +2,7 @@
 import { defineAsyncComponent } from 'vue'
 import { THEMES, CHALLENGE_YEAR, getTheme, formatDisplayDate } from '~/data/themes'
 import { loadMap } from '~/composables/useMapRegistry'
+import { SUBTITLES } from '~/data/subtitles'
 
 const route = useRoute()
 const day = Number(route.params.day)
@@ -11,7 +12,11 @@ if (!theme) {
   throw createError({ statusCode: 404, statusMessage: 'Not Found', fatal: true })
 }
 
-useHead({ title: `Day ${day}: ${theme.title} | 30DayMapChallenge ${CHALLENGE_YEAR}` })
+const subtitle = SUBTITLES[day]
+
+useHead({
+  title: `Day ${day}: ${theme.title}${subtitle ? ` — ${subtitle}` : ''} | 30DayMapChallenge ${CHALLENGE_YEAR}`,
+})
 
 const loader = loadMap(day)
 // Maps are browser-only (WebGL): skip SSR and mount on the client only
@@ -41,6 +46,7 @@ const next = day < THEMES.length ? day + 1 : null
         <NuxtLink v-if="next" :to="`/day/${next}`">Next ›</NuxtLink>
       </div>
       <h1>Day {{ day }}: {{ theme.title }}</h1>
+      <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
       <div class="date">{{ formatDisplayDate(day) }}, {{ CHALLENGE_YEAR }}</div>
       <p v-if="theme.description" class="desc">{{ theme.description }}</p>
     </header>
