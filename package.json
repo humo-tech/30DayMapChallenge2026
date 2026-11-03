@@ -17,6 +17,7 @@
   "dependencies": {
     "@navaramap/three": "^0.2.1",
     "@navaramap/three-default-plugin": "^0.2.1",
+    "@navaramap/three-plugins": "^0.2.1",
     "nuxt": "^4.0.0",
     "postprocessing": "^6.39.5",
     "three": "^0.186.1",
