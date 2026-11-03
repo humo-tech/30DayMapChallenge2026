@@ -23,7 +23,7 @@ const PART_COLORS: Record<string, Color> = {
 
 // The camera loops: out in space -> close in on Chiba-kun -> he blinks -> back out to space
 const SPACE_VIEW = { lng: 140.25, lat: 35.45, distance: 15_000_000, heading: 0, pitch: -90, roll: 0 }
-const CHIBA_VIEW = { lng: 140.25, lat: 35.45, distance: 400_000, heading: 0, pitch: -55, roll: 0 }
+const CHIBA_VIEW = { lng: 140.25, lat: 35.45, distance: 250_000, heading: 0, pitch: -55, roll: 0 }
 const FLIGHT_MS = 5000
 const SPACE_HOLD_MS = 1500
 const BLINK_MS = 3000
