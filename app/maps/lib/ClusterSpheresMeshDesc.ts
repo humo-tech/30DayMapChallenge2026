@@ -60,9 +60,9 @@ type ClusterSpheresOptions = {
   shadeColor?: Color
   /** Ground glow color */
   glowColor?: Color
-  /** Ground glow strength. Default: 1 */
+  /** Ground glow strength. Default: 0.55 */
   glow?: number
-  /** Ground glow radius relative to the sphere's. Default: 2.4 */
+  /** Ground glow radius relative to the sphere's. Default: 2 */
   glowScale?: number
   /** Transition length (ms). Default: 700 */
   duration?: number
