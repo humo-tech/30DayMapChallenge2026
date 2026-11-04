@@ -1,4 +1,4 @@
-// Cluster markers as glossy, striped 3D spheres resting on the globe, each over a pool of light, for Navara.
+// Cluster markers as glossy 3D spheres resting on the globe, each over a pool of light, for Navara.
 //
 // - Spheres: one instanced draw of a unit sphere, scaled per instance. Sizes are given in
 //   screen px at the view centre and turned into metres with `metersPerPx` every frame, so
@@ -28,7 +28,6 @@ import {
   PlaneGeometry,
   ShaderMaterial,
   SphereGeometry,
-  Vector2,
   Vector3,
 } from 'three'
 
@@ -48,15 +47,7 @@ type ClusterSpheresOptions = {
   /** Where the instance offsets are measured from; keep it near the data for float precision */
   anchor?: { lng: number; lat: number }
   color?: Color
-  /** Stripes over `color` */
-  stripeColor?: Color
-  /** Number of stripes. Default: 4 */
-  stripes?: number
-  /** Stripe width relative to the spacing between stripes. Default: 0.33 */
-  stripeWidth?: number
-  /** Stripe tilt off level (degrees, rising toward the east). Default: 15 */
-  stripeTilt?: number
-  /** Shadow side of `color` (the other colors darken in the same proportion) */
+  /** Shadow side of the spheres */
   shadeColor?: Color
   /** Ground glow color */
   glowColor?: Color
@@ -75,10 +66,6 @@ const DEFAULTS = {
   capacity: 16_384,
   anchor: { lng: 137.5, lat: 36 },
   color: new Color().setStyle('#fabe00'),
-  stripeColor: new Color().setStyle('#ffffff'),
-  stripes: 4,
-  stripeWidth: 0.33,
-  stripeTilt: 15,
   shadeColor: new Color().setStyle('#bf7a00'),
   glowColor: new Color().setStyle('#ffe39a'),
   glow: 0.55,
@@ -100,14 +87,12 @@ const sphereVertexShader = /* glsl */ `
   varying vec3 vPosV;
   varying vec3 vNormalV;
   varying vec3 vUpV;
-  varying vec3 vEastV;
   void main() {
     float r = 0.5 * aSize * uMetersPerPx;
     vec4 mv = modelViewMatrix * vec4(aCenter + aUp * r + position * r, 1.0);
     vPosV = mv.xyz;
     vNormalV = mat3(modelViewMatrix) * position;
     vUpV = mat3(modelViewMatrix) * aUp;
-    vEastV = mat3(modelViewMatrix) * normalize(cross(vec3(0.0, 0.0, 1.0), aUp));
     vHeat = aHeat;
     gl_Position = projectionMatrix * mv;
   }
@@ -115,38 +100,20 @@ const sphereVertexShader = /* glsl */ `
 
 // setupMaterialForMRT appends the G-buffer writes before main()'s closing brace, so keep main() last
 const sphereFragmentShader = /* glsl */ `
-  #define PI 3.141592653589793
   uniform vec3 uColor;
-  uniform vec3 uStripeColor;
-  uniform vec3 uShade;
-  uniform float uStripes;
-  uniform float uStripeWidth;
-  uniform vec2 uStripeTilt; // cos, sin
+  uniform vec3 uShadeColor;
   varying float vHeat;
   varying vec3 vPosV;
   varying vec3 vNormalV;
   varying vec3 vUpV;
-  varying vec3 vEastV;
-
   void main() {
     vec3 normal = normalize(vNormalV); // also read by the G-buffer write appended below
     vec3 V = normalize(-vPosV);
     vec3 L = normalize(vec3(-0.45, 0.7, 0.55)); // key light: upper left, toward the viewer
 
-    // Stripes: bands like lines of latitude, evenly spaced in angle, around the local vertical
-    // tipped a little toward the east so they run slightly aslant
-    vec3 stripeAxis = normalize(normalize(vUpV) * uStripeTilt.x - normalize(vEastV) * uStripeTilt.y);
-    float s = (asin(clamp(dot(normal, stripeAxis), -1.0, 1.0)) / PI + 0.5) * uStripes; // stripe k centred at k + 0.5
-    float d = abs(fract(s) - 0.5);
-    float halfWidth = 0.5 * uStripeWidth;
-    float aa = fwidth(s);
-    // Stripes narrower than a couple of pixels would only shimmer: fade them into the base color
-    float stripes = smoothstep(halfWidth + aa, halfWidth - aa, d) * smoothstep(halfWidth, 0.3 * halfWidth, aa);
-    vec3 albedo = mix(uColor, uStripeColor, stripes);
-
     // Shade by shifting toward a warm dark rather than toward black, so the yellow stays clean
     float light = smoothstep(-0.9, 1.0, dot(normal, L)) * mix(0.8, 1.0, 0.5 + 0.5 * dot(normal, normalize(vUpV)));
-    vec3 c = albedo * mix(uShade, vec3(1.0), light);
+    vec3 c = mix(uShadeColor, uColor, light);
     // Glossy plastic: a soft-edged highlight over a broad sheen. A crisp spot and a bright rim
     // read as metal, so neither is used
     float nh = max(dot(normal, normalize(L + V)), 0.0);
@@ -154,7 +121,6 @@ const sphereFragmentShader = /* glsl */ `
     gl_FragColor = vec4(c, 1.0);
   }
 `
-
 
 const glowVertexShader = /* glsl */ `
   ${commonVertex}
@@ -243,12 +209,7 @@ export class ClusterSpheresMeshDesc extends MeshDescWithSelectiveEffect<ClusterS
       uniforms: {
         uMetersPerPx: metersPerPx,
         uColor: { value: new Vector3(...opts.color.toArray()) },
-        uStripeColor: { value: new Vector3(...opts.stripeColor.toArray()) },
-        uStripes: { value: opts.stripes },
-        uStripeWidth: { value: opts.stripeWidth },
-        uStripeTilt: { value: new Vector2(Math.cos((opts.stripeTilt * Math.PI) / 180), Math.sin((opts.stripeTilt * Math.PI) / 180)) },
-        // (floored: a channel the base color lacks, like #fabe00's blue, would divide by zero)
-        uShade: { value: new Vector3(...opts.shadeColor.toArray()).divide(new Vector3(...opts.color.toArray()).max(new Vector3(0.01, 0.01, 0.01))) },
+        uShadeColor: { value: new Vector3(...opts.shadeColor.toArray()) },
       },
     })
     setupMaterialForMRT(this.sphereMaterial)
