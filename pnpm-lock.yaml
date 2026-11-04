@@ -23,6 +23,9 @@ importers:
       postprocessing:
         specifier: ^6.39.5
         version: 6.39.5(three@0.186.1)
+      supercluster:
+        specifier: ^9.1.0
+        version: 9.1.0
       three:
         specifier: ^0.186.1
         version: 0.186.1
@@ -36,6 +39,9 @@ importers:
       '@types/node':
         specifier: ^24
         version: 24.19.2
+      '@types/supercluster':
+        specifier: ^7.1.3
+        version: 7.1.3
       '@types/three':
         specifier: ~0.186.0
         version: 0.186.0
@@ -1045,6 +1051,9 @@ packages:
   '@types/estree@1.0.10':
     resolution: {integrity: sha512-lTyOMnOcmRBzdCv6/4zUZCrEhV0xrqQiUZBZtVcbmLHBXKLnN8q89v/wKRF/Q0HbwVsqbIG3o5HDoFl9sduM+g==}
 
+  '@types/geojson@7946.0.16':
+    resolution: {integrity: sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==}
+
   '@types/node@24.19.2':
     resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
 
@@ -1064,6 +1073,9 @@ packages:
 
   '@types/stats.js@0.17.4':
     resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
+
+  '@types/supercluster@7.1.3':
+    resolution: {integrity: sha512-Z0pOY34GDFl3Q6hUFYf3HkTwKEE02e7QgtJppBt+beEAxnyOpJua+voGFvxINBHa06GwLFFym7gRPY2SiKIfIA==}
 
   '@types/three@0.186.0':
     resolution: {integrity: sha512-mxYSBpDC+D0pLfSP6sW4WZTcT+nrtmZcimMqnVmy36Hte3XpeYSrvgg4TRdaM1GemGog1AWzI5qL2VoIfMXbJQ==}
@@ -2152,6 +2164,9 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
+  kdbush@4.1.0:
+    resolution: {integrity: sha512-e9vurzrXJQrFX6ckpHP3bvj5l+9CnYzkxDNnNQ1h2QTqdWsUAJgXiKdGNcOa1EY85dU8KbQ+z/FdQdB7P+9yfQ==}
+
   kleur@4.1.5:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
@@ -2876,6 +2891,9 @@ packages:
 
   structured-clone-es@2.0.1:
     resolution: {integrity: sha512-10ZL5r77LhknxlP1FBiCW+VdnuWOEFLdSS2SKtjyEV+L4qP1hUEIMIZW94LC3jKxRmT/Dj7KkD1mqh/IY6lhKQ==}
+
+  supercluster@9.1.0:
+    resolution: {integrity: sha512-WMhsJPm8Tf9f5mKxJ1D0mB5tbCMOFi8wTrm/LGnsJHGg8xkeNT/TWDZuFauOGRISnclbYgnxD7g3xJAfQO3FLg==}
 
   supports-color@10.2.2:
     resolution: {integrity: sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==}
@@ -4599,6 +4617,8 @@ snapshots:
 
   '@types/estree@1.0.10': {}
 
+  '@types/geojson@7946.0.16': {}
+
   '@types/node@24.19.2':
     dependencies:
       undici-types: 7.24.6
@@ -4616,6 +4636,10 @@ snapshots:
   '@types/resolve@1.20.2': {}
 
   '@types/stats.js@0.17.4': {}
+
+  '@types/supercluster@7.1.3':
+    dependencies:
+      '@types/geojson': 7946.0.16
 
   '@types/three@0.186.0':
     dependencies:
@@ -5727,6 +5751,8 @@ snapshots:
 
   json5@2.2.3: {}
 
+  kdbush@4.1.0: {}
+
   kleur@4.1.5: {}
 
   klona@2.0.6: {}
@@ -6636,6 +6662,11 @@ snapshots:
       js-tokens: 10.0.0
 
   structured-clone-es@2.0.1: {}
+
+  supercluster@9.1.0:
+    dependencies:
+      '@types/geojson': 7946.0.16
+      kdbush: 4.1.0
 
   supports-color@10.2.2: {}
 

@@ -55,6 +55,7 @@ scripts/.venv/bin/python scripts/day01/extract_tottori.py   # --release 2026-10-
 | `scripts/day01/extract_tottori.py` | Overture Maps places named "鳥取" / "とっとり" / "TOTTORI" → `public/data/day01/tottori_places.geojson` |
 | `scripts/day01/extract_pref_boundaries.py` | Prefecture land borders (Tottori's flagged) → `public/data/day01/pref_boundaries.geojson` |
 | `scripts/day01/extract_coastline.py --ne <dir>` | Global land polygons and coastlines (Japan: Overture, elsewhere: Natural Earth 1:50m) → `public/data/day01/land.geojson`, `coastline.geojson` |
+| `scripts/day04/extract_stations.py` | HELLO CYCLING stations and capacities from the GBFS `station_information` snapshot on S3 (AWS credentials required) → `public/data/day04/stations.geojson` |
 
 ## Deployment (GitHub Pages)
 
