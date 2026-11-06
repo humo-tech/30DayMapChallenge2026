@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Day 6: Vintage — GSI's seamless aerial photo of Kanto aging into an old sepia print:
-// it crumples and yellows in from the edges; then time rewinds and it starts over.
+// Day 6: Vintage — GSI's seamless aerial photo of Kanto aging into an old, faded, faintly sepia print:
+// it crumples and fades in from the edges; then time rewinds and it starts over.
 // Plain Three.js: the map is a sheet of paper here, not a globe.
 import {
   DataUtils,
@@ -109,7 +109,7 @@ const smooth = (a: number, b: number, t: number) => {
   return x * x * (3 - 2 * x)
 }
 
-// One round of the story (s): from the start the photo slowly crumples as it yellows; a pause;
+// One round of the story (s): from the start the photo slowly crumples as it fades; a pause;
 // then time rewinds
 const ROUND_S = 30
 function story(t: number) {
@@ -117,7 +117,7 @@ function story(t: number) {
   // Easing out: the crumpling shows from the first seconds and settles in
   const crumpling = 1 - (1 - Math.min(1, Math.max(0, (t - 0.5) / 14))) ** 3
   return {
-    sepia: smooth(1.5, 10, t) * back,
+    fade: smooth(1.5, 10, t) * back,
     crumple: 0.8 * crumpling * back,
     camera: smooth(4, 13, t) * back,
   }
@@ -193,7 +193,7 @@ onMounted(async () => {
         uHeight: { value: crumple.target.texture },
         uHeightMin: { value: crumple.min },
         uTexel: { value: [1 / crumple.target.width, 1 / crumple.target.height] },
-        uSepia: { value: 0 },
+        uFade: { value: 0 },
         uRelief: { value: 2.6 },
         // Light from the north-west, high up (paper space: x east, y north, z up)
         uLight: { value: new Vector3(-0.4, 0.5, 0.75).normalize() },
@@ -245,7 +245,7 @@ onMounted(async () => {
     t = (t + Math.min(0.1, (now - last) / 1000)) % ROUND_S
     last = now
     const s = story(t)
-    paper.material.uniforms.uSepia!.value = s.sepia
+    paper.material.uniforms.uFade!.value = s.fade
     uCrumple.value = s.crumple
     if (autoCamera.value) {
       const target = pose(s.camera, t)
