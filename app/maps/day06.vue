@@ -219,7 +219,7 @@ onMounted(async () => {
     const whole = Math.max(1, aspect / camera.aspect) / (2 * halfTan)
     const drift = 0.08 * Math.sin(t * 0.25) * k
     return new Vector3().setFromSpherical(
-      new Spherical(fill * 0.97 + (whole * 1.2 - fill * 0.97) * k, 0.001 + 0.75 * k, 0.22 * k + drift),
+      new Spherical(fill * 0.97 + (whole * 1.15 - fill * 0.97) * k, 0.001 + 1.0 * k, 0.22 * k + drift),
     )
   }
 
