@@ -14,13 +14,10 @@ const vec3 SEPIA_DARK = vec3(0.40, 0.34, 0.25);
 const vec3 SEPIA_LIGHT = vec3(0.97, 0.95, 0.87);
 const vec3 STAIN = vec3(0.90, 0.82, 0.64);
 const vec3 BURN = vec3(0.95, 0.85, 0.62);
-const vec3 FIBRE = vec3(0.97, 0.94, 0.87);
 const vec3 BACK = vec3(0.86, 0.80, 0.66);
 
 void main() {
   vec2 p = vec2(vUv.x * uAspect, vUv.y);
-  float fiber;
-  if (tornDist(p, fiber) < 0.0) discard;
 
   // Normal from the height map, per pixel so the creases stay sharp
   float hl = texture2D(uHeight, vUv - vec2(uTexel.x, 0.0)).r;
@@ -64,6 +61,5 @@ void main() {
   col = mix(col, SEPIA_LIGHT, clamp(wear, 0.0, 1.0) * uCrumple * age * 0.35);
   if (!gl_FrontFacing) col = mix(BACK, BACK * STAIN, stain * uSepia) ;
   col = col * shade + spec;
-  col = mix(col, FIBRE * (0.8 + 0.25 * shade), fiber * 0.9);
   gl_FragColor = vec4(col, 1.0);
 }

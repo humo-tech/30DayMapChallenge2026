@@ -1,4 +1,4 @@
-// Day 6: a dark walnut desk, with the sheet's soft shadow (torn outline and all)
+// Day 6: a dark walnut desk, with the sheet's soft shadow
 uniform float uCrumple;
 varying vec2 vWorld;
 
@@ -10,8 +10,7 @@ void main() {
   // World (x, z) -> paper coordinates, shifted away from the light; a crumpled sheet stands
   // higher, so its shadow falls further and softer
   vec2 p = vec2(w.x + uAspect * 0.5, 0.5 - w.y) - vec2(0.4, -0.5) * (0.012 + 0.02 * uCrumple);
-  float fiber;
-  float dist = tornDist(p, fiber);
+  float dist = paperDist(p);
   float blur = 0.008 + 0.025 * uCrumple;
   col *= 1.0 - 0.6 * smoothstep(-blur, blur, dist);
 

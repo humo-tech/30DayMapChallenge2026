@@ -1,9 +1,8 @@
 <script setup lang="ts">
 // Day 6: Vintage — GSI's seamless aerial photo of Kanto aging into an old sepia print:
-// it yellows in from the edges, gets crumpled, and tears; then time rewinds and it starts over.
+// it crumples and yellows in from the edges; then time rewinds and it starts over.
 // Plain Three.js: the map is a sheet of paper here, not a globe.
 import {
-  DataTexture,
   DataUtils,
   DoubleSide,
   CanvasTexture,
@@ -11,14 +10,15 @@ import {
   HalfFloatType,
   LinearFilter,
   Mesh,
+  OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
-  RGFormat,
   Scene,
   ShaderMaterial,
   Spherical,
   Vector3,
   WebGLRenderer,
+  WebGLRenderTarget,
 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import common from './lib/shaders/vintageCommon.glsl?raw'
@@ -26,6 +26,7 @@ import paperVert from './lib/shaders/vintagePaper.vert.glsl?raw'
 import paperFrag from './lib/shaders/vintagePaper.frag.glsl?raw'
 import deskVert from './lib/shaders/vintageDesk.vert.glsl?raw'
 import deskFrag from './lib/shaders/vintageDesk.frag.glsl?raw'
+import crumpleFrag from './lib/shaders/vintageCrumple.frag.glsl?raw'
 
 const TILE_URL = 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'
 const ZOOM = 10
@@ -79,80 +80,28 @@ async function stitch(): Promise<HTMLCanvasElement> {
   return canvas
 }
 
-function mulberry32(seed: number) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-// The crumple as a height map over the sheet (R: height, G: how worn the crease is).
-// Old-map folds (two across, one down the middle) plus a crowd of shorter random creases, each a
-// kinked ridge or valley that fades out along its length. Heights are shifted to start at 0 so
-// the sheet rests on the desk.
-function crumpleTexture(aspect: number, size = 1024): DataTexture {
-  const h = new Float32Array(size * size)
-  const wear = new Float32Array(size * size)
-  const rand = mulberry32(6)
-  type Crease = { cx: number; cy: number; dx: number; dy: number; half: number; reach: number; amp: number }
-  const creases: Crease[] = [
-    { cx: aspect / 3, cy: 0.5, dx: 0, dy: 1, half: 0.8, reach: 0.2, amp: 0.012 },
-    { cx: (aspect * 2) / 3, cy: 0.5, dx: 0, dy: 1, half: 0.8, reach: 0.2, amp: -0.012 },
-    { cx: aspect / 2, cy: 0.5, dx: 1, dy: 0, half: aspect, reach: 0.22, amp: 0.01 },
-  ]
-  for (let i = 0; i < 260; i++) {
-    const a = rand() * Math.PI
-    creases.push({
-      cx: -0.05 + rand() * (aspect + 0.1),
-      cy: -0.05 + rand() * 1.1,
-      dx: Math.cos(a),
-      dy: Math.sin(a),
-      half: 0.04 + rand() * 0.2,
-      reach: 0.02 + rand() * 0.07,
-      amp: (rand() < 0.5 ? -1 : 1) * (0.001 + rand() * 0.004),
-    })
-  }
-  const WEAR_W = 0.003
-  for (const c of creases) {
-    // Only visit the pixels within reach of the crease's segment
-    const ex = Math.abs(c.dx) * c.half + c.reach
-    const ey = Math.abs(c.dy) * c.half + c.reach
-    const i0 = Math.max(0, Math.floor(((c.cx - ex) / aspect) * size))
-    const i1 = Math.min(size - 1, Math.ceil(((c.cx + ex) / aspect) * size))
-    const j0 = Math.max(0, Math.floor((c.cy - ey) * size))
-    const j1 = Math.min(size - 1, Math.ceil((c.cy + ey) * size))
-    for (let j = j0; j <= j1; j++) {
-      const py = (j + 0.5) / size - c.cy
-      for (let i = i0; i <= i1; i++) {
-        const px = ((i + 0.5) / size) * aspect - c.cx
-        const across = Math.abs(px * -c.dy + py * c.dx)
-        const along = Math.abs(px * c.dx + py * c.dy)
-        if (across >= c.reach || along >= c.half) continue
-        const tail = Math.min(1, (c.half - along) / (c.half * 0.5))
-        const fade = tail * tail * (3 - 2 * tail)
-        const r = 1 - across / c.reach
-        h[j * size + i]! += c.amp * r * r * fade
-        if (across < WEAR_W) {
-          const k = (1 - across / WEAR_W) * fade * Math.min(1, Math.abs(c.amp) / 0.012) ** 2
-          wear[j * size + i] = Math.max(wear[j * size + i]!, k)
-        }
-      }
-    }
-  }
+// The crumple, baked once on the GPU into a height map (see vintageCrumple.frag.glsl), and its
+// lowest point, so the sheet can rest on the desk
+function bakeCrumple(renderer: WebGLRenderer, aspect: number, size = 1024): { target: WebGLRenderTarget; min: number } {
+  const target = new WebGLRenderTarget(size, size, { type: HalfFloatType, magFilter: LinearFilter, minFilter: LinearFilter, depthBuffer: false })
+  const quad = new Mesh(
+    new PlaneGeometry(2, 2),
+    new ShaderMaterial({
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: common + crumpleFrag,
+      uniforms: { uAspect: { value: aspect } },
+    }),
+  )
+  renderer.setRenderTarget(target)
+  renderer.render(quad, new OrthographicCamera())
+  renderer.setRenderTarget(null)
+  quad.geometry.dispose()
+  quad.material.dispose()
+  const pixels = new Uint16Array(size * size * 4)
+  renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels)
   let min = Infinity
-  for (const v of h) min = Math.min(min, v)
-  const data = new Uint16Array(size * size * 2)
-  for (let k = 0; k < size * size; k++) {
-    data[k * 2] = DataUtils.toHalfFloat(h[k]! - min)
-    data[k * 2 + 1] = DataUtils.toHalfFloat(wear[k]!)
-  }
-  const tex = new DataTexture(data, size, size, RGFormat, HalfFloatType)
-  tex.magFilter = LinearFilter
-  tex.minFilter = LinearFilter
-  tex.needsUpdate = true
-  return tex
+  for (let k = 0; k < pixels.length; k += 4) min = Math.min(min, DataUtils.fromHalfFloat(pixels[k]!))
+  return { target, min }
 }
 
 const smooth = (a: number, b: number, t: number) => {
@@ -160,16 +109,16 @@ const smooth = (a: number, b: number, t: number) => {
   return x * x * (3 - 2 * x)
 }
 
-// One round of the story (s): fresh photo -> yellowing -> crumpled (a sudden scrunch, then
-// smoothed out a little) -> torn; a pause; then time rewinds
+// One round of the story (s): from the start the photo slowly crumples as it yellows; a pause;
+// then time rewinds
 const ROUND_S = 30
 function story(t: number) {
   const back = 1 - smooth(24, 29, t)
-  const scrunch = smooth(8, 9.2, t)
+  // Easing out: the crumpling shows from the first seconds and settles in
+  const crumpling = 1 - (1 - Math.min(1, Math.max(0, (t - 0.5) / 14))) ** 3
   return {
     sepia: smooth(1.5, 10, t) * back,
-    crumple: scrunch * (1 - 0.35 * smooth(9.2, 12, t)) * back,
-    tear: smooth(11.5, 16, t) * back,
+    crumple: 0.8 * crumpling * back,
     camera: smooth(4, 13, t) * back,
   }
 }
@@ -190,6 +139,7 @@ onMounted(async () => {
   controls.maxDistance = 6
 
   let disposed = false
+  let crumpleTarget: WebGLRenderTarget | undefined
   dispose = () => {
     disposed = true
     cancelAnimationFrame(frame)
@@ -203,6 +153,7 @@ onMounted(async () => {
         m.dispose()
       }
     })
+    crumpleTarget?.dispose()
     renderer.dispose()
     renderer.domElement.remove()
   }
@@ -223,11 +174,11 @@ onMounted(async () => {
   const aspect = canvas.width / canvas.height
   const map = new CanvasTexture(canvas)
   map.anisotropy = renderer.capabilities.getMaxAnisotropy()
-  const height = crumpleTexture(aspect)
+  const crumple = bakeCrumple(renderer, aspect)
+  crumpleTarget = crumple.target
 
-  // Uniforms shared by the paper and the desk (its shadow follows the tear)
+  // Uniforms shared by the paper and the desk (for its shadow)
   const uAspect = { value: aspect }
-  const uTear = { value: 0 }
   const uCrumple = { value: 0 }
   const paper = new Mesh(
     new PlaneGeometry(aspect, 1, Math.round(400 * aspect), 400).translate(aspect / 2, 0.5, 0),
@@ -237,13 +188,13 @@ onMounted(async () => {
       side: DoubleSide,
       uniforms: {
         uAspect,
-        uTear,
         uCrumple,
         uMap: { value: map },
-        uHeight: { value: height },
-        uTexel: { value: [1 / height.image.width, 1 / height.image.height] },
+        uHeight: { value: crumple.target.texture },
+        uHeightMin: { value: crumple.min },
+        uTexel: { value: [1 / crumple.target.width, 1 / crumple.target.height] },
         uSepia: { value: 0 },
-        uRelief: { value: 2.5 },
+        uRelief: { value: 2.6 },
         // Light from the north-west, high up (paper space: x east, y north, z up)
         uLight: { value: new Vector3(-0.4, 0.5, 0.75).normalize() },
       },
@@ -256,7 +207,7 @@ onMounted(async () => {
 
   const desk = new Mesh(
     new PlaneGeometry(14, 14).rotateX(-Math.PI / 2),
-    new ShaderMaterial({ vertexShader: common + deskVert, fragmentShader: common + deskFrag, uniforms: { uAspect, uTear, uCrumple } }),
+    new ShaderMaterial({ vertexShader: common + deskVert, fragmentShader: common + deskFrag, uniforms: { uAspect, uCrumple } }),
   )
   scene.add(desk)
 
@@ -296,7 +247,6 @@ onMounted(async () => {
     const s = story(t)
     paper.material.uniforms.uSepia!.value = s.sepia
     uCrumple.value = s.crumple
-    uTear.value = s.tear
     if (autoCamera.value) {
       const target = pose(s.camera, t)
       if (blendFrom) {
