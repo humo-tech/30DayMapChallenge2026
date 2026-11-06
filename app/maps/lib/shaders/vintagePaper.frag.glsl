@@ -10,10 +10,10 @@ uniform float uRelief;
 uniform vec3 uLight;
 varying vec2 vUv;
 
-const vec3 SEPIA_DARK = vec3(0.30, 0.19, 0.10);
-const vec3 SEPIA_LIGHT = vec3(0.94, 0.86, 0.68);
-const vec3 STAIN = vec3(0.80, 0.66, 0.46);
-const vec3 BURN = vec3(0.45, 0.30, 0.17);
+const vec3 SEPIA_DARK = vec3(0.40, 0.34, 0.25);
+const vec3 SEPIA_LIGHT = vec3(0.97, 0.95, 0.87);
+const vec3 STAIN = vec3(0.90, 0.82, 0.64);
+const vec3 BURN = vec3(0.95, 0.85, 0.62);
 const vec3 FIBRE = vec3(0.97, 0.94, 0.87);
 const vec3 BACK = vec3(0.86, 0.80, 0.66);
 
@@ -41,16 +41,20 @@ void main() {
 
   vec3 photo = texture2D(uMap, vUv).rgb;
   float lum = dot(photo, vec3(0.299, 0.587, 0.114));
-  vec3 aged = mix(SEPIA_DARK, SEPIA_LIGHT, smoothstep(0.03, 0.68, lum));
-  // Water stains, foxing, burnt edges, grain
+  // Faded: the colors drained to a trace, contrast flattened, a yellowed cast over it all
+  vec3 toned = mix(SEPIA_DARK, SEPIA_LIGHT, smoothstep(0.03, 0.68, lum));
+  vec3 drained = mix(vec3(lum), photo, 0.35) * vec3(1.0, 0.97, 0.86);
+  vec3 aged = mix(toned, drained, 0.35);
+  aged = mix(aged, SEPIA_LIGHT, 0.22) * vec3(1.02, 0.98, 0.86);
+  // Water stains, foxing, yellowed edges, grain
   float stain = smoothstep(0.5, 0.75, fbm(p * 2.5 + 11.0));
-  aged *= mix(vec3(1.0), STAIN, stain * 0.7);
+  aged *= mix(vec3(1.0), STAIN, stain * 0.45);
   float ring = smoothstep(0.012, 0.0, abs(length((p - vec2(0.28, 0.3)) * vec2(1.0, 1.1)) - 0.11 - 0.01 * fbm(p * 20.0)));
-  aged *= mix(vec3(1.0), STAIN, ring * 0.45);
+  aged *= mix(vec3(1.0), STAIN, ring * 0.3);
   float fox = smoothstep(0.78, 0.86, vnoise(p * 70.0)) * smoothstep(0.45, 0.7, fbm(p * 5.0));
-  aged *= 1.0 - 0.35 * fox * vec3(0.6, 0.8, 1.0);
-  float burn = 1.0 - smoothstep(0.0, 0.07, d + 0.04 * (fbm(p * 12.0) - 0.5));
-  aged = mix(aged, aged * BURN * 1.6, burn * 0.8);
+  aged *= 1.0 - 0.2 * fox * vec3(0.6, 0.8, 1.0);
+  float burn = 1.0 - smoothstep(0.0, 0.05, d + 0.03 * (fbm(p * 12.0) - 0.5));
+  aged = mix(aged, aged * BURN, burn * 0.35);
   aged *= 0.92 + 0.12 * vnoise(p * 900.0) + 0.06 * fbm(vec2(p.x * 40.0, p.y * 400.0));
 
   vec3 col = mix(photo, aged, age);
