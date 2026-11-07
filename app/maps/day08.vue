@@ -21,6 +21,8 @@ import {
 import { COURSE_M, Course } from './lib/utopiaCourse'
 import { FOG, PASTELS, buildWorld, disposeTree, makeBear } from './lib/utopiaWorld'
 import { Trainer, hasWebBluetooth, type TrainerData } from './lib/ftms'
+import { cheerDeck, type Cheer } from './lib/utopiaCheers'
+import { MusicBox } from './lib/utopiaMusic'
 
 // Rider and bike (kg), air and tyres
 const MASS = 83
@@ -31,7 +33,14 @@ const G = 9.81
 const EYE = 1.55
 const DEMO_W = 170
 
+const root = ref<HTMLDivElement>()
 const container = ref<HTMLDivElement>()
+const fullscreen = ref(false)
+const onFullscreenChange = () => (fullscreen.value = document.fullscreenElement === root.value)
+function toggleFullscreen() {
+  if (document.fullscreenElement) void document.exitFullscreen()
+  else void root.value?.requestFullscreen()
+}
 const hud = reactive({ power: 0, cadence: undefined as number | undefined, speed: 0, grade: 0, lap: 1, lapM: 0, lapTime: 0 })
 const demoPower = ref(DEMO_W)
 const trainerName = ref('')
@@ -41,6 +50,37 @@ const error = ref('')
 const bluetooth = ref(false)
 let trainer: Trainer | undefined
 let dispose: (() => void) | undefined
+let restart: (() => void) | undefined
+
+// Music: on unless turned off, but browsers only let it start from a click or a key press,
+// so it waits for the first one anywhere on the page
+const music = ref(true)
+let musicBox: MusicBox | undefined
+let musicStartedAt = 0
+const onFirstGesture = () => {
+  if (musicBox || !music.value) return
+  musicBox = new MusicBox()
+  musicBox.playing = true
+  musicStartedAt = performance.now()
+}
+function toggleMusic() {
+  // The press that just started the music shouldn't stop it again
+  if (performance.now() - musicStartedAt < 600) return
+  music.value = !music.value
+  musicBox ??= new MusicBox()
+  musicBox.playing = music.value
+}
+
+// A message at every kilometre ridden, popping up for a few seconds
+const CHEER_MS = 7000
+const nextCheer = cheerDeck()
+const cheer = ref<(Cheer & { km: number; id: number }) | undefined>()
+let cheerTimer: ReturnType<typeof setTimeout> | undefined
+function showCheer(km: number) {
+  clearTimeout(cheerTimer)
+  cheer.value = { ...nextCheer(), km, id: km }
+  cheerTimer = setTimeout(() => (cheer.value = undefined), CHEER_MS)
+}
 
 const course = new Course()
 
@@ -220,9 +260,13 @@ onMounted(() => {
   canvas.addEventListener('pointerup', up)
   canvas.addEventListener('pointercancel', up)
   window.addEventListener('keydown', onKey)
+  document.addEventListener('fullscreenchange', onFullscreenChange)
+  window.addEventListener('pointerdown', onFirstGesture, true)
+  window.addEventListener('keydown', onFirstGesture, true)
 
   let s = 0
   let v = 0
+  let odo = 0
   let lapStart = 0
   let elapsed = 0
   let crank = 0
@@ -255,6 +299,9 @@ onMounted(() => {
       v = Math.max(0, v + ((drive - resist) / MASS) * dt)
     }
     s += v * dt
+    const km = Math.floor(odo / 1000)
+    odo += v * dt
+    if (Math.floor(odo / 1000) > km) showCheer(km + 1)
     if (s >= COURSE_M) {
       s -= COURSE_M
       hud.lap++
@@ -307,10 +354,24 @@ onMounted(() => {
   }
   frame = requestAnimationFrame(tick)
 
+  restart = () => {
+    s = v = odo = 0
+    lapStart = elapsed
+    hud.lap = 1
+    smoothAhead.set(0, 0, 0) // so the view snaps to the start instead of swinging round
+    clearTimeout(cheerTimer)
+    cheer.value = undefined
+  }
+
   dispose = () => {
     cancelAnimationFrame(frame)
     observer.disconnect()
     window.removeEventListener('keydown', onKey)
+    document.removeEventListener('fullscreenchange', onFullscreenChange)
+    window.removeEventListener('pointerdown', onFirstGesture, true)
+    window.removeEventListener('keydown', onFirstGesture, true)
+    musicBox?.dispose()
+    musicBox = undefined
     disposeTree(scene)
     world.textures.forEach((t) => t.dispose())
     renderer.dispose()
@@ -319,6 +380,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(cheerTimer)
+  restart = undefined
   trainer?.disconnect()
   trainer = undefined
   dispose?.()
@@ -327,10 +390,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="map-canvas day08">
+  <div ref="root" class="map-canvas day08">
     <div ref="container" class="map-canvas" />
 
     <div class="controls">
+      <div class="row">
+        <button type="button" class="chip" @click="restart?.()">↺ Back to start</button>
+        <button type="button" class="chip" :aria-pressed="fullscreen" @click="toggleFullscreen">
+          {{ fullscreen ? '⤡ Exit full screen' : '⤢ Full screen' }}
+        </button>
+        <button type="button" class="chip" :aria-pressed="music" @click="toggleMusic">{{ music ? '♪ Music on' : '♪ Music off' }}</button>
+      </div>
       <button
         type="button"
         class="chip"
@@ -346,6 +416,15 @@ onBeforeUnmount(() => {
       <div v-else-if="error" class="note error">{{ error }}</div>
       <div v-else class="note">Auto ride · ↑ ↓ power</div>
     </div>
+
+    <Transition name="pop">
+      <div v-if="cheer" :key="cheer.id" class="cheer">
+        <div class="emoji">{{ cheer.emoji }}</div>
+        <div class="km">{{ cheer.km }} km!</div>
+        <div class="en">{{ cheer.en }}</div>
+        <div class="ja">{{ cheer.ja }}</div>
+      </div>
+    </Transition>
 
     <div class="hud">
       <div class="stat power">
@@ -405,6 +484,11 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
+.controls .row {
+  display: flex;
+  gap: 6px;
+}
+
 /* Matches the page's header panel */
 .chip,
 .hud,
@@ -443,6 +527,78 @@ onBeforeUnmount(() => {
 
 .note.error {
   color: #b0304f;
+}
+
+/* The kilometre message: a puffy pastel bubble with a stitched edge */
+.cheer {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  z-index: 10;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 14px 26px 16px;
+  transform: translateX(-50%);
+  text-align: center;
+  color: #6a4b72;
+  background: linear-gradient(160deg, #fff4fa, #ffe0ee 55%, #f0e4ff);
+  border: 3px dashed rgba(255, 255, 255, 0.95);
+  border-radius: 32px;
+  outline: 6px solid #ffc4d8;
+  box-shadow: 0 10px 28px rgba(190, 120, 170, 0.35);
+  pointer-events: none;
+}
+
+.cheer .emoji {
+  font-size: 40px;
+  line-height: 1;
+  animation: bob 1.4s ease-in-out infinite;
+}
+
+.cheer .km {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #ff8fb1;
+}
+
+.cheer .en {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.cheer .ja {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #8a6a92;
+}
+
+@keyframes bob {
+  50% {
+    transform: translateY(-5px) rotate(-6deg);
+  }
+}
+
+.pop-enter-active {
+  animation: pop-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pop-leave-active {
+  transition: opacity 0.5s, transform 0.5s;
+}
+
+.pop-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-12px) scale(0.9);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.4);
+  }
 }
 
 .hud {
