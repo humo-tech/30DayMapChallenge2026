@@ -57,6 +57,7 @@ scripts/.venv/bin/python scripts/day01/extract_tottori.py   # --release 2026-10-
 | `scripts/day01/extract_coastline.py --ne <dir>` | Global land polygons and coastlines (Japan: Overture, elsewhere: Natural Earth 1:50m) → `public/data/day01/land.geojson`, `coastline.geojson` |
 | `scripts/day04/extract_stations.py` | HELLO CYCLING stations and capacities from the GBFS `station_information` snapshot on S3 (AWS credentials required) → `public/data/day04/stations.geojson` |
 | `scripts/day05/extract_skytree.py` | LED points scattered over Tokyo Skytree's walls, from its PLATEAU 2025 Sumida-ku LOD3 tile (Draco mesh) → `public/data/day05/skytree_leds.json` |
+| `scripts/day09/extract_tokyo_mesh.py` | Mainland Tokyo on the 1 km grid: weekday late-night (01–04) and midday (11–14) people in the latest month (2021-12) of MLIT's people-flow open data → `public/data/day09/tokyo_mesh.json` |
 
 ## Deployment (GitHub Pages)
 
