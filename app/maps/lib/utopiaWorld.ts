@@ -42,7 +42,7 @@ export const PASTELS = {
 export const FOG = '#ffe4ee'
 
 // Seeded, so the world is the same on every visit
-function rng(seed: number) {
+export function rng(seed: number) {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0
     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
@@ -59,7 +59,7 @@ function canvas(w: number, h: number) {
 }
 
 // Felt fuzz for every surface's bump map
-function feltTexture(rand: () => number) {
+export function feltTexture(rand: () => number) {
   const [c, ctx] = canvas(256, 256)
   ctx.fillStyle = '#808080'
   ctx.fillRect(0, 0, 256, 256)
