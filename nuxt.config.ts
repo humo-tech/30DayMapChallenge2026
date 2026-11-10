@@ -1,6 +1,7 @@
 import { cpSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { THEMES } from './app/data/themes'
+import { NAVARA_PAGES } from './app/data/navara'
 
 // Navara loads its workers via `new URL('assets/...', import.meta.url)` in pre-built
 // code, which Vite neither rewrites nor emits. Copy them next to the chunks, where
@@ -44,8 +45,8 @@ export default defineNuxtConfig({
   nitro: {
     preset: 'github-pages',
     prerender: {
-      // Prerender all 30 day pages
-      routes: ['/', ...THEMES.map((t) => `/day/${t.day}`)],
+      // Prerender all 30 day pages, plus the bare Navara showcase pages
+      routes: ['/', ...THEMES.map((t) => `/day/${t.day}`), ...Object.keys(NAVARA_PAGES).map((slug) => `/navara/${slug}`)],
     },
   },
 
