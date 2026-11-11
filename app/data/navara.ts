@@ -4,4 +4,5 @@
  */
 export const NAVARA_PAGES: Record<string, number> = {
   skytree: 5,
+  thunder: 11,
 }
