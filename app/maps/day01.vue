@@ -103,7 +103,6 @@ onMounted(async () => {
       // The default depth offset lets points just behind the limb show through; lift them slightly instead
       offsetDepth: false,
       height: 15_000,
-      center: { x: 0.5, y: 0.5 },
       declutter: false,
       emissiveColor: SPARKLE,
       effectIds: [bloom.id],
