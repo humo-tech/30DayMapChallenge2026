@@ -1,0 +1,16 @@
+{
+  "width": 1440,
+  "height": 721,
+  "lat0": 90.0,
+  "dlon": 0.25,
+  "lng0": -180.0,
+  "params": [
+    "swh",
+    "mwd",
+    "mwp"
+  ],
+  "type": "float16",
+  "missing": -1,
+  "time": "2026-11-12T00:00Z",
+  "source": "ECMWF open data, IFS wave model (CC BY 4.0)"
+}
