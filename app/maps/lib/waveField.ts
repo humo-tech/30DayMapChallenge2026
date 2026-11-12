@@ -57,6 +57,12 @@ export type WaveGrid = {
   data: Uint16Array
 }
 
+/**
+ * How fast both looks run: a 10 s swell's crests cross this much of the square a second (its
+ * energy, at the group speed, half that). Relative to the square, so it reads the same at any zoom
+ */
+export const PHASE_SPEED = 0.05
+
 // The square takes in this much more than the view
 export const MARGIN = 1.3
 // The shell sits this high (m), over the ellipsoid's own tessellation
@@ -133,15 +139,26 @@ export const domainChunk = /* glsl */ `
   bool inside(vec2 uv) { return all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0))); }
 `
 
+// How far (degrees) the waves at `lngLat` carry something in `dt` s, at `speed` of the square a
+// second for a 10 s swell (the longer the period, the faster: gT/2π). Wants uDomain declared
+export const travelChunk = /* glsl */ `
+  vec2 travel(Wave w, vec2 lngLat, float dt, float speed) {
+    float angle = speed * (w.period / 10.0) * 2.0 * uDomain.z * dt;
+    return degrees(angle * w.dir / vec2(max(cos(radians(lngLat.y)), 0.05), 1.0));
+  }
+`
+
 export function rampChunk() {
   return /* glsl */ `
-  // Wave power (kW/m) to color: a calm deep blue, teal, cyan, white-hot amber in the storms
+  // Wave power (kW/m, on a log scale up to 600) to color, lighter the more power: navy in the
+  // calms, blue, cyan, pale, and near white under the storms, the very strongest a touch warm
+  // (kept below full white: the bloom lifts it)
   vec3 ramp(float kw) {
     float t = clamp(log(1.0 + kw) / log(1.0 + 600.0), 0.0, 1.0);
-    vec3 c = mix(vec3(0.05, 0.16, 0.55), vec3(0.0, 0.62, 0.85), smoothstep(0.0, 0.45, t));
-    c = mix(c, vec3(0.3, 0.85, 1.0), smoothstep(0.4, 0.68, t));
-    c = mix(c, vec3(1.0, 0.78, 0.4), smoothstep(0.66, 0.84, t));
-    return mix(c, vec3(1.0, 0.35, 0.12), smoothstep(0.84, 1.0, t));
+    vec3 c = mix(vec3(0.02, 0.06, 0.28), vec3(0.04, 0.24, 0.72), smoothstep(0.0, 0.38, t));
+    c = mix(c, vec3(0.08, 0.62, 0.95), smoothstep(0.32, 0.62, t));
+    c = mix(c, vec3(0.48, 0.82, 0.95), smoothstep(0.58, 0.82, t));
+    return mix(c, vec3(0.86, 0.86, 0.8), smoothstep(0.8, 1.0, t));
   }
 `
 }

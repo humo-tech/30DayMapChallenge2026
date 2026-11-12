@@ -30,10 +30,12 @@ import {
   type WebGLRenderer,
 } from 'three'
 import {
+  PHASE_SPEED,
   WaveDomainMeshDesc,
   domainChunk,
   rampChunk,
   resampleFragment,
+  travelChunk,
   varyings,
   waveChunk,
   type Domain,
@@ -49,8 +51,6 @@ type WaveStreamOptions = {
 }
 export type WaveStreamConfig = MeshConfigWithSelectiveEffect & { waveStream?: WaveStreamOptions }
 
-// A 10 s swell's crests cross SPEED of the square a second
-const SPEED = 0.035
 // A crest lives this long (s) before it's born again elsewhere
 const LIFE: [number, number] = [2.5, 7]
 // The wake fades to 1/e in this long (s)
@@ -63,22 +63,13 @@ const hashChunk = /* glsl */ `
     return fract((p3.x + p3.y) * p3.z);
   }
 `
-// How far (degrees) a crest goes in `dt` s from `lngLat`, `speed` of the square a second for a
-// 10 s swell (`half`: at the group speed)
-const motionChunk = /* glsl */ `
-  vec2 travel(Wave w, vec2 lngLat, float dt, float speed) {
-    float angle = speed * (w.period / 10.0) * 2.0 * uDomain.z * dt;
-    return degrees(angle * w.dir / vec2(max(cos(radians(lngLat.y)), 0.05), 1.0));
-  }
-`
-
 // The crests' state, one per texel: lng, lat, age, life
 const particleFragment = /* glsl */ `
   ${waveChunk}
   ${domainChunk}
   ${hashChunk}
   uniform vec3 uDomain;
-  ${motionChunk}
+  ${travelChunk}
   uniform sampler2D uState;
   uniform float uDt;
   uniform float uSeed;
@@ -102,10 +93,10 @@ const particleFragment = /* glsl */ `
       return;
     }
     // Midpoint step, so the crests bend round with the swell
-    vec2 mid = s.xy + travel(w, s.xy, uDt * 0.5, ${SPEED.toFixed(4)});
+    vec2 mid = s.xy + travel(w, s.xy, uDt * 0.5, ${PHASE_SPEED.toFixed(4)});
     Wave wm = wave(mid);
     if (wm.sea <= 0.0) wm = w;
-    vec2 p = s.xy + travel(wm, mid, uDt, ${SPEED.toFixed(4)});
+    vec2 p = s.xy + travel(wm, mid, uDt, ${PHASE_SPEED.toFixed(4)});
     p.x = mod(p.x + 180.0, 360.0) - 180.0;
     p.y = clamp(p.y, -89.0, 89.0);
     gl_FragColor = vec4(p, s.z + uDt, s.w);
@@ -118,7 +109,7 @@ const advectFragment = /* glsl */ `
   ${waveChunk}
   ${domainChunk}
   uniform vec3 uDomain;
-  ${motionChunk}
+  ${travelChunk}
   uniform sampler2D uTrail;
   uniform float uDt;
   uniform float uDecay;
@@ -127,7 +118,7 @@ const advectFragment = /* glsl */ `
     if (!fromDomain(vUv, uDomain, ll)) { gl_FragColor = vec4(0.0); return; }
     Wave w = wave(ll);
     float front;
-    vec2 from = toDomain(ll - travel(w, ll, uDt, ${(SPEED / 2).toFixed(4)}), uDomain, front);
+    vec2 from = toDomain(ll - travel(w, ll, uDt, ${(PHASE_SPEED / 2).toFixed(4)}), uDomain, front);
     float prev = textureLod(uTrail, from, 0.0).r;
     gl_FragColor = vec4(prev * uDecay * smoothstep(0.0, 0.5, w.sea), 0.0, 0.0, 1.0);
   }
@@ -180,7 +171,7 @@ const shellFragment = /* glsl */ `
     float trail = 1.0 - exp(-1.2 * texture2D(uTrail, uv).r);
     // A faint wash of the power field under the moving wake
     float wash = 0.05 + 0.12 * smoothstep(0.0, 300.0, kw);
-    float a = (wash + trail * (0.5 + 1.1 * smoothstep(10.0, 400.0, kw))) * smoothstep(0.0, 0.6, w.sea);
+    float a = (wash + trail * (0.45 + 0.75 * smoothstep(10.0, 400.0, kw))) * smoothstep(0.0, 0.6, w.sea);
     gl_FragColor = vec4(ramp(kw) * a, 1.0);
   }
 `

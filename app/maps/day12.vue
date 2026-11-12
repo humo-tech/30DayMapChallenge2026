@@ -2,8 +2,9 @@
 // Day 12: Power — the power of the world's ocean waves, from ECMWF's wave model, two ways (a
 // button switches): as a fluid, a Navier-Stokes simulation pulled along the way the waves go (the
 // longer the period, the faster), stirring dye in the color of how much power the waves carry; or
-// as streamlines, crests running the way the waves go and leaving a wake of their energy. Deep
-// blue in the calms to white-hot amber under the storms; both worked out over what's in view
+// as streamlines, crests running the way the waves go and leaving a wake of their energy. The
+// more power, the lighter: navy in the calms to white under the storms; both worked out over
+// what's in view
 import ThreeView, { Color } from '@navaramap/three'
 import { DefaultPlugin, type DefaultDescriptions } from '@navaramap/three-default-plugin'
 import { TileJsonPlugin } from '@navaramap/three-plugins'
@@ -58,7 +59,7 @@ onMounted(async () => {
 
   v.globe.color = new Color().setStyle(NIGHT)
   v.setCamera(START)
-  const bloom = v.addEffect({ selectiveBloom: { strength: 0.9, radius: 0.5, threshold: 0 } })
+  const bloom = v.addEffect({ selectiveBloom: { strength: 0.6, radius: 0.5, threshold: 0 } })
 
   // (typed separately: the view's mesh config union only knows the DefaultPlugin descriptors)
   const limbGlow: LimbGlowConfig = { limbGlow: { color: new Color().setStyle('#3f8cff'), intensity: 0.7, scaleHeight: 80_000 } }
