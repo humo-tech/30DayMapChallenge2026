@@ -59,6 +59,7 @@ scripts/.venv/bin/python scripts/day01/extract_tottori.py   # --release 2026-10-
 | `scripts/day05/extract_skytree.py` | LED points scattered over Tokyo Skytree's walls, from its PLATEAU 2025 Sumida-ku LOD3 tile (Draco mesh) → `public/data/day05/skytree_leds.json` |
 | `scripts/day09/extract_tokyo_mesh.py` | Mainland Tokyo on the 1 km grid: weekday late-night (01–04) and midday (11–14) people in the latest month (2021-12) of MLIT's people-flow open data → `public/data/day09/tokyo_mesh.json` |
 | `scripts/day12/fetch_waves.py` | Significant wave height, mean direction and mean period of ECMWF's IFS wave model (open data, 0.25°) for the latest run, as raw float16 → `public/data/day12/waves.bin` (+ `waves.json`) |
+| `scripts/day13/extract_shibuya.py` | Around Shibuya Station from Overture Maps: the walkable street network as a graph (cut at its connectors, largest connected part), building footprints with heights, and coffee shops → `public/data/day13/streets.json`, `buildings.geojson`, `coffee.json` |
 
 ## Deployment (GitHub Pages)
 

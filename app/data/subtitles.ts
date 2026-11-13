@@ -13,4 +13,5 @@ export const SUBTITLES: Partial<Record<number, string>> = {
   9: 'Tokyo, Day and Night',
   11: 'Flash to Bang',
   12: 'Power of the Waves',
+  13: 'Shibuya Coffee Crawl',
 }
