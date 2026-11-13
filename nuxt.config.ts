@@ -45,8 +45,13 @@ export default defineNuxtConfig({
   nitro: {
     preset: 'github-pages',
     prerender: {
-      // Prerender all 30 day pages, plus the bare Navara showcase pages
-      routes: ['/', ...THEMES.map((t) => `/day/${t.day}`), ...Object.keys(NAVARA_PAGES).map((slug) => `/navara/${slug}`)],
+      // Prerender all 30 day pages, the bare Navara showcase pages, and Day 12 on MapLibre
+      routes: [
+        '/',
+        ...THEMES.map((t) => `/day/${t.day}`),
+        ...Object.keys(NAVARA_PAGES).map((slug) => `/navara/${slug}`),
+        '/day/12-maplibre',
+      ],
     },
   },
 
