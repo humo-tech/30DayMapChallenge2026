@@ -1,6 +1,6 @@
 # Day 12: Power — 実装解説
 
-世界の海の波を、ECMWF の波浪モデルのデータから Navara の地球儀の上に描く。色は波が運ぶエネルギーの量（**波パワー**）で、凪の紺から嵐の下の白まで、強いほど明るい。見せ方は右上のボタンで 2 通りに切り替えられる。
+世界の海の波を、ECMWF の波浪モデルのデータから Navara の地球儀の上に描く。同じ計算を MapLibre GL JS の地球儀（globe 投影）で動かす版も、隠しページ `/day/12-maplibre` にある（§9）。色は波が運ぶエネルギーの量（**波パワー**）で、凪の紺から嵐の下の白まで、強いほど明るい。見せ方は右上のボタンで 2 通りに切り替えられる。
 
 - **Fluid（粘体）**：Navier–Stokes 方程式を解く流体シミュレーション。波の流れに乗って、波パワーの色のインクが流れ、渦に混ぜられ、水面のように陰影が付く。
 - **Streamlines（流線）**：波の峰を表す粒子が波の進む向きに走り、エネルギーの航跡を残す。
@@ -11,18 +11,25 @@
 |---|---|
 | `scripts/day12/fetch_waves.py` | ECMWF のオープンデータから波高・波向・周期を取り、float16 のバイナリにする |
 | `public/data/day12/waves.bin` / `waves.json` | 0.25° 格子 1440×721 の 3 変数（6.2MB、gzip で 2.4MB）と、その説明 |
-| `app/maps/day12.vue` | ページ本体。地球儀、モード切り替え、毎フレームの呼び出し |
-| `app/maps/lib/waveField.ts` | 両モードの共通部分。波データの補間、見えている範囲の追従、海を覆うシェル |
-| `app/maps/lib/WaveFluidMeshDesc.ts` | 粘体モード（Stable Fluids） |
-| `app/maps/lib/WaveStreamMeshDesc.ts` | 流線モード（粒子と航跡） |
+| `app/maps/lib/waveSim.ts` | 両モードの共通部分（地図に依存しない、three.js だけ）。波データの補間、見えている範囲の追従、基底クラス `WaveSim` |
+| `app/maps/lib/waveFluidSim.ts` | 粘体モード（Stable Fluids）：`WaveFluidSim` |
+| `app/maps/lib/waveStreamSim.ts` | 流線モード（粒子と航跡）：`WaveStreamSim` |
+| `app/maps/lib/waveGui.ts` | `?gui=1` のパラメータのパネル（両方の地図で共通） |
+| `app/maps/day12.vue` | Navara 版のページ本体。地球儀、モード切り替え、毎フレームの呼び出し |
+| `app/maps/lib/waveField.ts` | Navara 版の土台：メッシュ記述子 `WaveDomainMeshDesc`、カメラから見えている範囲、楕円体を覆うシェル |
+| `app/maps/lib/WaveFluidMeshDesc.ts` / `WaveStreamMeshDesc.ts` | Navara 版の各モード（`WaveFluidSim` / `WaveStreamSim` を包むだけ） |
+| `app/maps/day12-maplibre.vue` / `app/pages/day/12-maplibre.vue` | MapLibre 版のページ（隠しページ `/day/12-maplibre`） |
+| `app/maps/lib/waveGlobeLayer.ts` | MapLibre 版の土台：カスタムレイヤー、globe 投影に乗るシェル |
 
 ```
 data.ecmwf.int ─ fetch_waves.py ─▶ waves.bin (float16) ─ fetch ─▶ day12.vue
                                                                   │ RGBA16F テクスチャ（1 回だけ）
   毎フレーム（preUpdate）                                           ▼
    └─ step(dt, カメラ) ─▶ WaveDomainMeshDesc（waveField.ts）
-                           ├─ 見えている範囲 → 四角を決める（外れたら写し替え）
-                           ├─ simulate()  … WaveFluidMeshDesc / WaveStreamMeshDesc
+                           ├─ 画面の 5×5 点 → 地球上の点
+                           ├─ WaveSim.step()（waveSim.ts）
+                           │    ├─ 見えている範囲 → 四角を決める（外れたら写し替え）
+                           │    └─ simulate()  … WaveFluidSim / WaveStreamSim
                            └─ シェル（地球を覆う面）に結果を貼る
 ```
 
@@ -84,7 +91,7 @@ WebGL2 で GPU に計算させる方法は 2 つある。
 
 ---
 
-## 3. 見えている範囲だけを計算する：`waveField.ts`
+## 3. 見えている範囲だけを計算する：`waveSim.ts`
 
 最初の版は、全球を 1 枚の正距円筒テクスチャ（4096×2048、約 10km/px）で計算していた。これだと拡大したときにテクスチャが引き伸ばされてぼやける。そこで、いま見えている範囲を正方形に切り出し、その中だけを計算するようにした。
 
@@ -94,7 +101,7 @@ WebGL2 で GPU に計算させる方法は 2 つある。
 
 ### 四角の決め方：`viewDomain()`
 
-画面を 5×5 の点でサンプルし、各点から視線を延ばして地球（球）と交わる位置を求める。地球を外れた視線は、その方向の地平線（地球の、視線に最も近い点）を代わりに使う。画面中央の交点を中心にして、すべての点を収める大きさを半辺にし、それに 1.3 倍（`MARGIN`）の余裕を足す。
+画面を 5×5 の点でサンプルし、各点から視線を延ばして地球（球）と交わる位置を求める。地球を外れた視線は、その方向の地平線（地球の、視線に最も近い点）を代わりに使う。この 25 点は地図の側が渡す（Navara 版は `waveField.ts` の `viewPoints()` がカメラから計算、MapLibre 版は `map.unproject()`。MapLibre の globe も、地球を外れた点を地平線に寄せて返す）。画面中央の交点を中心にして、すべての点を収める大きさを半辺にし、それに 1.3 倍（`MARGIN`）の余裕を足す。
 
 ### 四角を取り直すとき：`needsNewDomain()`
 
@@ -109,7 +116,7 @@ WebGL2 で GPU に計算させる方法は 2 つある。
 
 寄っていくと、古い（粗い）内容が引き伸ばされて写るが、計算がその縮尺の細かさで描き直していくので、数秒で細部が戻る。
 
-### シェル（海を覆う面）
+### シェル（海を覆う面）：`waveField.ts`
 
 結果は、地球を覆う経度緯度の格子メッシュ（720×360 分割、楕円体から 3km 上）に貼る。フラグメントシェーダーが、自分の経度緯度から四角の中の位置を求めてテクスチャを読む。陸と、四角の外にあたる部分は描かない。
 
@@ -117,9 +124,9 @@ Navara の ECEF 座標の軸の向きは WASM の中にあって外から読め�
 
 ブルームは Day 11 の `ThunderMeshDesc` と同じく、`USE_SELECTIVE_EFFECT` を立てて `setupMaterialForMRT` を通している。
 
-### 共通の基底クラス `WaveDomainMeshDesc`
+### 共通の基底クラス `WaveSim`
 
-毎フレームの流れは基底クラスにまとめてある。各モードは次の 3 つを実装するだけでよい。
+毎フレームの流れは基底クラス `WaveSim`（`waveSim.ts`）にまとめてある。three.js の `WebGLRenderer` を 1 つ借りて、オフスクリーンのテクスチャに計算するだけなので、地図には依存しない。各モードは次の 3 つと、シェルのフラグメントシェーダー（`shellFragment`）と uniform（`shellUniforms`）を用意するだけでよい。地図の側は、毎フレーム `step(renderer, dt, 25 点)` を呼び、返ってきた値をシェルの uniform に入れる。
 
 | フック | いつ |
 |---|---|
@@ -142,7 +149,7 @@ Navara の ECEF 座標の軸の向きは WASM の中にあって外から読め�
 
 ---
 
-## 5. 流線：`WaveStreamMeshDesc.ts`
+## 5. 流線：`waveStreamSim.ts`
 
 ### 峰（粒子）
 
@@ -165,7 +172,7 @@ Navara の ECEF 座標の軸の向きは WASM の中にあって外から読め�
 
 ---
 
-## 6. 粘体：`WaveFluidMeshDesc.ts`
+## 6. 粘体：`waveFluidSim.ts`
 
 ### Stable Fluids
 
@@ -236,16 +243,51 @@ ECMWF の `mwp` は、エネルギー周期に相当する周期なので、こ�
 - 最初のカメラは北太平洋の真上 11,000km。日本からアリューシャンの南の嵐までが入る。
 - 地図は Day 11 と同じ暗いラスタータイル（papers-dark）を、灰青に染めて陸の形だけを見せる。地球の縁の光（`LimbGlowMeshDesc`）と星空（`StarfieldMeshDesc`）は Day 1 と同じ。
 - 両モードのメッシュを両方追加しておき、表示しているほうだけ `step()` を呼ぶ。切り替えると、そのモードは `reset()` で空から始まり、数秒で埋まる。
-- **パラメータのパネル**：URL に `?gui=1` を付けたときだけ、右上のボタンの下に [lil-gui](https://lil-gui.georgealways.com/)（dat.gui の後継）のパネルが出る（例：`/day/12?gui=1`）。共通の「Waves」（峰の速さ、ブルーム）と、表示中のモードの項目だけが出て、各項目の下に何に効くかを日本語で 1 行添えている。値はシェーダーの uniform として毎フレーム渡しているので、動かしたその場で変わる。`reset` で既定値に戻る。既定値は `WaveFluidMeshDesc.ts` の `FLUID_DEFAULTS`、`WaveStreamMeshDesc.ts` の `STREAM_DEFAULTS`。
+- **パラメータのパネル**：URL に `?gui=1` を付けたときだけ、右上のボタンの下に [lil-gui](https://lil-gui.georgealways.com/)（dat.gui の後継）のパネルが出る（例：`/day/12?gui=1`）。共通の「Waves」（峰の速さ、ブルーム）と、表示中のモードの項目だけが出て、各項目の下に何に効くかを日本語で 1 行添えている。値はシェーダーの uniform として毎フレーム渡しているので、動かしたその場で変わる。`reset` で既定値に戻る。既定値は `waveFluidSim.ts` の `FLUID_DEFAULTS`、`waveStreamSim.ts` の `STREAM_DEFAULTS`。パネルは `waveGui.ts` にあり、MapLibre 版も同じものを使う。
 - **寄りすぎの制限**：高度 300km より下には行かせない。Navara 0.3.1 のカメラの `minimumZoomDistance` は、ホイールでのズームを止めなかった。そこで毎フレーム高度を見て、下回っていたら押し戻している。
 
 ---
 
-## 9. 調整ポイント
+## 9. MapLibre GL JS 版：`/day/12-maplibre`
+
+同じ 2 つの見せ方を、MapLibre GL JS の地球儀（globe 投影）の上で動かす隠しページ。どこからもリンクしておらず、`noindex`。ヘッダーから Navara 版へ戻れる。シミュレーションのコード（`waveSim.ts`・`waveFluidSim.ts`・`waveStreamSim.ts`）は Navara 版と同じもので、地図とつなぐ部分だけが違う。
+
+| | Navara 版 | MapLibre 版 |
+|---|---|---|
+| 計算に使う `WebGLRenderer` | Navara のもの（`ctx.getRenderer()`） | 地図の GL コンテキストの上に作ったもの（Day 10 のクマと同じ） |
+| 計算するタイミング | `preUpdate` | カスタムレイヤーの `prerender`（地図が描く前） |
+| 見えている 25 点 | カメラの視線と球の交点 | `map.unproject()` |
+| シェル | 楕円体を覆う格子（ECEF） | Web メルカトルの格子を、MapLibre の `projectTile()` で地球儀に乗せる |
+| 地球の裏側 | 深度で隠れる | `projectTile()` が Z を書き換えて切り落とす |
+| ブルーム | あり（`selectiveBloom`） | なし |
+| 縁の光 / 星 | `LimbGlowMeshDesc` / `StarfieldMeshDesc` | MapLibre の大気（`sky` の `atmosphere-blend`）/ なし |
+
+### シェルを地球儀に乗せる：`waveGlobeLayer.ts`
+
+MapLibre はカスタムレイヤーに、いまの投影で頂点を画面に置く関数 `projectTile()` を、シェーダーの前置き（`shaderData.vertexShaderPrelude`）として渡してくる。Web メルカトルの座標（0〜1）を渡せば、globe なら球の上に、ズームしてメルカトルに切り替わればその平面に置いてくれる。そこで、シェルは経度緯度の格子（720×360、緯度 ±85.05° まで）の頂点を Web メルカトルの座標で持ち、頂点シェーダーでは `projectTile(position.xy)` を呼ぶだけにした。フラグメントシェーダーは Navara 版とまったく同じもの（経度緯度 `vGeo` から四角の中の位置を求める）。
+
+前置きが読む uniform（`u_projection_matrix` など 5 つ）は、`render()` に渡される `defaultProjectionData` から毎フレーム入れる。前置きは投影の種類で変わるので、マテリアルは「モード × 投影の種類（`shaderData.variantName`）」ごとに作って取っておく。
+
+### 色空間
+
+見せ方の計算はリニアな色でしている。Navara は最後にフレーム全体を画面用（sRGB）に変換するが、MapLibre には直接画面に描くので、その変換がかからない。そのままだとかなり暗くなる。そこで MapLibre 版のシェルは、元のフラグメントシェーダーの `main()` を `shellMain()` に改名して呼び、最後に three.js の `linearToOutputTexel()` を通す。
+
+### three.js と MapLibre の GL の共有
+
+three.js は GL の状態を自分で覚えているが、MapLibre が描いた後ではその記憶が古い。そこで `prerender` と `render` の頭で `renderer.resetState()` を呼ぶ。MapLibre の側は、カスタムレイヤーを呼んだ後で自分の状態を必ず設定し直す（`draw_custom.ts` の `setDirty()`）ので、three.js が何を変えても困らない。画面に描く前には、ビューポートを描画バッファの大きさに合わせる（ウィンドウの大きさが変わっても合うように）。
+
+### 地図
+
+- 最初の位置は Navara 版と同じ北太平洋の上（ズーム 2.15 で、同じくらいの大きさに見える）。寄れるのはズーム 5.5 まで（地上約 300km 相当）。
+- 背景は同じ Re:Earth Papers の暗い地図。Navara 版の色を掛ける代わりに、`raster-brightness-max` と `raster-saturation` で暗く、色を抜いている。
+
+---
+
+## 10. 調整ポイント
 
 ほとんどはパネルからその場で動かせる（「パネル」の列に名前があるもの）。気に入った値は、既定値（`FLUID_DEFAULTS` / `STREAM_DEFAULTS` / `PHASE_SPEED` / `BLOOM`）に書き写す。
 
-両モード（`waveField.ts`、`day12.vue`）：
+両モード（`waveSim.ts`、`waveField.ts`、`day12.vue`）：
 
 | 設定 | パネル | 既定値 | 効果 |
 |---|---|---|---|
@@ -256,7 +298,7 @@ ECMWF の `mwp` は、エネルギー周期に相当する周期なので、こ�
 | `rampChunk()` | — | 紺 → 灰白 | 波パワーの色 |
 | `START` / `MIN_HEIGHT` | — | 北太平洋 11,000km / 300km | 最初のカメラ / これより寄らせない |
 
-粘体（`WaveFluidMeshDesc.ts` の `FLUID_DEFAULTS`）：
+粘体（`waveFluidSim.ts` の `FLUID_DEFAULTS`）：
 
 | 設定 | パネル | 既定値 | 効果 |
 |---|---|---|---|
@@ -272,7 +314,7 @@ ECMWF の `mwp` は、エネルギー周期に相当する周期なので、こ�
 | `glint` | glint | 0.3 | 照り返しの強さ |
 | `simSize` / `dyeSize` | — | 256 / 1280 | 速度とインクの解像度（`waveFluid` の設定） |
 
-流線（`WaveStreamMeshDesc.ts` の `STREAM_DEFAULTS`）：
+流線（`waveStreamSim.ts` の `STREAM_DEFAULTS`）：
 
 | 設定 | パネル | 既定値 | 効果 |
 |---|---|---|---|
@@ -285,9 +327,10 @@ ECMWF の `mwp` は、エネルギー周期に相当する周期なので、こ�
 
 ---
 
-## 10. 限界
+## 11. 限界
 
 - 波のデータは約 25km の格子。拡大したときに見える細かい渦やうねりは、見た目のための演出（かき混ぜの力と渦度強調）で、データにはない。流れの向き・速さ・色はデータに従う。
 - データは 1 時刻だけ（予報 0 時間目）。時間変化はない。
 - 四角を頻繁に取り直す（地球を回し続ける、など）と、写し替えのたびに少しぼやける。数秒で戻る。
 - 北極の付近は、背景のラスタータイル（Web メルカトルで約 85° まで）が届かず黒い円が出る。海氷の部分は波のデータもない。
+- MapLibre 版にはブルームがないので、嵐の海域の白は Navara 版ほど光らない。星もない。
