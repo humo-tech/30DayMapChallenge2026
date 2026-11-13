@@ -1,16 +1,18 @@
 // Day 12's parameter panel (lil-gui, shown with ?gui=1), for either map: what both looks share,
 // then the look shown's own, each with a line on what it does.
 import GUI, { type Controller } from 'lil-gui'
+import type { CrestParams } from './waveCrestSim'
 import type { FluidParams } from './waveFluidSim'
 import { PHASE_SPEED } from './waveSim'
 import type { StreamParams } from './waveStreamSim'
 
-export const MODES = { fluid: 'Fluid', stream: 'Streamlines' } as const
+export const MODES = { fluid: 'Fluid', stream: 'Streamlines', crests: 'Crests' } as const
 export type Mode = keyof typeof MODES
 
 export type WaveGuiOptions = {
   fluid: FluidParams
   stream: StreamParams
+  crests: CrestParams
   /** Sets both looks' crest speed */
   setSpeed: (x: number) => void
   /** The bloom's strength and how to set it, where the map has one */
@@ -57,9 +59,19 @@ export function waveGui(container: HTMLElement | undefined, o: WaveGuiOptions): 
   hint(stream.add(st, 'pointSize', 1, 4, 0.25).name('crest size'), '峰の点の大きさ。上げると筋が太くなる')
   hint(stream.add(st, 'glow', 0, 2, 0.05), '嵐の海域での航跡の明るさ')
 
+  const crests = gui.addFolder('Crests')
+  const c = o.crests
+  hint(crests.add(c, 'size', 6, 80, 1), '「^」の大きさ（周期 10 秒のとき）。周期が長いほど大きくなる')
+  hint(crests.add(c, 'brightness', 0, 3, 0.05), '「^」の明るさ')
+  hint(crests.add(c, 'pace', 0.05, 1.5, 0.05), '「^」が進む速さ（crest speed に対する倍率）。下げるとゆったり流れる')
+  hint(crests.add(c, 'lifeMin', 0.5, 10, 0.5).name('life min (s)'), '「^」が生まれ変わるまでの寿命（最短）')
+  hint(crests.add(c, 'lifeMax', 0.5, 15, 0.5).name('life max (s)'), '「^」が生まれ変わるまでの寿命（最長）')
+  hint(crests.add(c, 'tail', 0, 1, 0.01).name('tail (s)'), '「^」の後ろに残る尾の長さ。上げると流れの筋が長くなる')
+
   const showFolders = (m: Mode) => {
     fluid.show(m === 'fluid')
     stream.show(m === 'stream')
+    crests.show(m === 'crests')
   }
   showFolders(o.mode())
   o.onMode(showFolders)

@@ -61,15 +61,15 @@ export const STREAM_DEFAULTS = {
 }
 export type StreamParams = typeof STREAM_DEFAULTS
 
-const hashChunk = /* glsl */ `
+export const hashChunk = /* glsl */ `
   float hash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
   }
 `
-// The crests' state, one per texel: lng, lat, age, life
-const particleFragment = /* glsl */ `
+// The crests' state, one per texel: lng, lat, age, life (also used by waveCrestSim.ts)
+export const particleFragment = /* glsl */ `
   ${waveChunk}
   ${domainChunk}
   ${hashChunk}

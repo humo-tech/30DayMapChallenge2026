@@ -1,16 +1,18 @@
 <script setup lang="ts">
-// Day 12: Power — the power of the world's ocean waves, from ECMWF's wave model, two ways (a
+// Day 12: Power — the power of the world's ocean waves, from ECMWF's wave model, three ways (a
 // button switches): as a fluid, a Navier-Stokes simulation pulled along the way the waves go (the
-// longer the period, the faster), stirring dye in the color of how much power the waves carry; or
-// as streamlines, crests running the way the waves go and leaving a wake of their energy. The
-// more power, the lighter: navy in the calms to white under the storms; both worked out over
-// what's in view. With ?gui=1, a panel (lil-gui) tunes them as they run
+// longer the period, the faster), stirring dye in the color of how much power the waves carry;
+// as streamlines, crests running the way the waves go and leaving a wake of their energy; or as
+// crests, little flat "^" marks running the way the waves go, colored by the wave height. The more
+// power (or height), the lighter: navy in the calms to white under the storms; all worked out
+// over what's in view. With ?gui=1, a panel (lil-gui) tunes them as they run
 import ThreeView, { Color } from '@navaramap/three'
 import { DefaultPlugin, type DefaultDescriptions } from '@navaramap/three-default-plugin'
 import { TileJsonPlugin } from '@navaramap/three-plugins'
 import type GUI from 'lil-gui'
 import { LimbGlowMeshDesc, type LimbGlowConfig } from './lib/LimbGlowMeshDesc'
 import { StarfieldMeshDesc, type StarfieldConfig } from './lib/StarfieldMeshDesc'
+import { WaveCrestMeshDesc, type WaveCrestConfig } from './lib/WaveCrestMeshDesc'
 import { WaveFluidMeshDesc, type WaveFluidConfig } from './lib/WaveFluidMeshDesc'
 import { WaveStreamMeshDesc, type WaveStreamConfig } from './lib/WaveStreamMeshDesc'
 import { MODES, waveGui, type Mode } from './lib/waveGui'
@@ -58,6 +60,7 @@ onMounted(async () => {
   v.registerMesh('starfield', StarfieldMeshDesc)
   v.registerMesh('waveFluid', WaveFluidMeshDesc)
   v.registerMesh('waveStream', WaveStreamMeshDesc)
+  v.registerMesh('waveCrest', WaveCrestMeshDesc)
 
   v.globe.color = new Color().setStyle(NIGHT)
   v.setCamera(START)
@@ -78,9 +81,11 @@ onMounted(async () => {
   // Both looks, only the one shown running; it starts afresh when switched to
   const fluidConfig: WaveFluidConfig = { effectIds: [bloom.id], waveFluid: { grid } }
   const streamConfig: WaveStreamConfig = { effectIds: [bloom.id], waveStream: { grid } }
+  const crestConfig: WaveCrestConfig = { effectIds: [bloom.id], waveCrest: { grid } }
   const looks = {
     fluid: v.addMesh<WaveFluidMeshDesc>(fluidConfig),
     stream: v.addMesh<WaveStreamMeshDesc>(streamConfig),
+    crests: v.addMesh<WaveCrestMeshDesc>(crestConfig),
   }
   const show = (m: Mode) => {
     for (const [key, look] of Object.entries(looks)) look.visible = key === m
@@ -96,7 +101,8 @@ onMounted(async () => {
     gui = waveGui(controls.value, {
       fluid: looks.fluid.ref.params,
       stream: looks.stream.ref.params,
-      setSpeed: (x) => (looks.fluid.ref.speed = looks.stream.ref.speed = x),
+      crests: looks.crests.ref.params,
+      setSpeed: (x) => (looks.fluid.ref.speed = looks.stream.ref.speed = looks.crests.ref.speed = x),
       bloom: { strength: BLOOM, set: (x) => bloomHandle.update({ selectiveBloom: { strength: x } }) },
       mode: () => mode.value,
       onMode: (f) => watch(mode, f),

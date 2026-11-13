@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Day 12: Power, on MapLibre GL JS (the hidden page /day/12-maplibre) — the same two looks at the
+// Day 12: Power, on MapLibre GL JS (the hidden page /day/12-maplibre) — the same three looks at the
 // power of the world's ocean waves as the Navara map (day12.vue), the same code running them
 // (waveSim.ts), shown on MapLibre's globe through a custom layer (waveGlobeLayer.ts). MapLibre
 // has no bloom, so the brightest seas don't glow; its own atmosphere stands in for Navara's limb
@@ -10,6 +10,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import type GUI from 'lil-gui'
 import { waveGlobeLayer, type WaveGlobeLayer } from './lib/waveGlobeLayer'
+import { WaveCrestSim } from './lib/waveCrestSim'
 import { WaveFluidSim } from './lib/waveFluidSim'
 import { MODES, waveGui, type Mode } from './lib/waveGui'
 import type { WaveGrid } from './lib/waveSim'
@@ -73,7 +74,7 @@ onMounted(async () => {
   map = m
 
   // Both looks, only the one shown running; it starts afresh when switched to
-  const looks = { fluid: new WaveFluidSim(grid), stream: new WaveStreamSim(grid) }
+  const looks = { fluid: new WaveFluidSim(grid), stream: new WaveStreamSim(grid), crests: new WaveCrestSim(grid) }
   const l = waveGlobeLayer(looks, mode.value)
   layer = l
   m.once('load', () => {
@@ -86,7 +87,8 @@ onMounted(async () => {
     gui = waveGui(controls.value, {
       fluid: looks.fluid.params,
       stream: looks.stream.params,
-      setSpeed: (x) => (looks.fluid.speed = looks.stream.speed = x),
+      crests: looks.crests.params,
+      setSpeed: (x) => (looks.fluid.speed = looks.stream.speed = looks.crests.speed = x),
       mode: () => mode.value,
       onMode: (f) => watch(mode, f),
     })
