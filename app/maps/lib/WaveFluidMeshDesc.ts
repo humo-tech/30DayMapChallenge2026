@@ -15,7 +15,6 @@
 import type { MeshConfigWithSelectiveEffect } from '@navaramap/three'
 import { HalfFloatType, LinearFilter, RGBAFormat, Vector2, Vector3, WebGLRenderTarget, type Mesh, type ShaderMaterial, type WebGLRenderer } from 'three'
 import {
-  PHASE_SPEED,
   WaveDomainMeshDesc,
   domainChunk,
   rampChunk,
@@ -36,18 +35,29 @@ type WaveFluidOptions = {
 }
 export type WaveFluidConfig = MeshConfigWithSelectiveEffect & { waveFluid?: WaveFluidOptions }
 
-// The eddies: rough seas stir them, up to STIR flow texels/s for an 8 m sea, pulled toward that
-// at PULL (1/s). They have no divergence and average out, so they mix the dye without turning
-// the swell's flow. CURL is the vorticity confinement, PRESSURE_ITERATIONS the Jacobi steps
-const PULL = 1.5
-const STIR = 25
-const CURL = 8
-const PRESSURE_ITERATIONS = 20
-const VELOCITY_DISSIPATION = 0.15
-// The dye: everywhere, it eases toward the color of the power there at RELAX (1/s), slowly
-// enough that the flow carries it a good way first; more of it in broad patches fixed to the
-// globe, which never change, so the flow draws plumes out of them. Nothing else fades it
-const RELAX = 0.35
+// The defaults, tunable as it runs (`params`):
+// - The eddies: rough seas stir them, up to `stir` flow texels/s for an 8 m sea, pulled toward
+//   that at `pull` (1/s). They have no divergence and average out, so they mix the dye without
+//   turning the swell's flow. `curl` is the vorticity confinement, `pressureIterations` the
+//   Jacobi steps.
+// - The dye: everywhere, it eases toward the color of the power there at `relax` (1/s), slowly
+//   enough that the flow carries it a good way first; more of it in broad patches fixed to the
+//   globe, which never change, so the flow draws plumes out of them. Nothing else fades it.
+export const FLUID_DEFAULTS = {
+  stir: 25,
+  pull: 1.5,
+  curl: 8,
+  pressureIterations: 20,
+  velocityDissipation: 0.15,
+  relax: 0.35,
+  /** How much more dye the patches take (× the 0.35 everywhere else) */
+  plumes: 1.3,
+  /** The shading: the surface's flatness (lower, steeper relief), the lit side, the glints */
+  flatness: 0.05,
+  light: 0.75,
+  glint: 0.3,
+}
+export type FluidParams = typeof FLUID_DEFAULTS
 
 const noiseChunk = /* glsl */ `
   float hash3(vec3 p) {
@@ -103,7 +113,7 @@ const meanFragment = /* glsl */ `
     Wave w = wave(ll);
     float front;
     float h = 0.05;
-    vec2 ahead = (toDomain(ll + travel(w, ll, h, ${(PHASE_SPEED / 2).toFixed(4)}), uDomain, front) - vUv) / h;
+    vec2 ahead = (toDomain(ll + travel(w, ll, h, uSpeed * 0.5), uDomain, front) - vUv) / h;
     gl_FragColor = vec4(ahead * uSize * smoothstep(0.2, 0.7, w.steady) * smoothstep(0.0, 0.5, w.sea), 0.0, 1.0);
   }
 `
@@ -120,6 +130,8 @@ const forceFragment = /* glsl */ `
   uniform float uDt;
   uniform float uSize;
   uniform float uTime;
+  uniform float uStir;
+  uniform float uPull;
   float stirAt(vec2 uv) {
     vec2 ll;
     return fromDomain(uv, uDomain, ll) ? patches(ll, uDomain.z * 2.0, uTime * 2.0 + 40.0) : 0.5;
@@ -131,8 +143,8 @@ const forceFragment = /* glsl */ `
     vec2 v = texture2D(uVelocity, vUv).xy;
     // The noise's slope across a texel, times the ~uSize / 5 texels an eddy spans: about 1
     vec2 slope = vec2(stirAt(vR) - stirAt(vL), stirAt(vT) - stirAt(vB)) * 0.5 * uSize / 5.0;
-    vec2 target = vec2(slope.y, -slope.x) * ${STIR.toFixed(1)} * smoothstep(0.5, 8.0, w.height);
-    v += (target - v) * (1.0 - exp(-uDt * ${PULL.toFixed(2)}));
+    vec2 target = vec2(slope.y, -slope.x) * uStir * smoothstep(0.5, 8.0, w.height);
+    v += (target - v) * (1.0 - exp(-uDt * uPull));
     gl_FragColor = vec4(v * smoothstep(0.0, 0.5, w.sea), 0.0, 1.0);
   }
 `
@@ -153,6 +165,7 @@ const vorticityFragment = /* glsl */ `
   ${varyings}
   uniform sampler2D uVelocity;
   uniform sampler2D uCurl;
+  uniform float uConfinement;
   uniform float uDt;
   void main() {
     float l = texture2D(uCurl, vL).x;
@@ -162,7 +175,7 @@ const vorticityFragment = /* glsl */ `
     float c = texture2D(uCurl, vUv).x;
     vec2 force = 0.5 * vec2(abs(t) - abs(b), abs(r) - abs(l));
     force /= length(force) + 1e-4;
-    force *= ${CURL.toFixed(1)} * c;
+    force *= uConfinement * c;
     force.y *= -1.0;
     vec2 v = texture2D(uVelocity, vUv).xy + force * uDt;
     gl_FragColor = vec4(clamp(v, -1000.0, 1000.0), 0.0, 1.0);
@@ -244,6 +257,8 @@ const injectFragment = /* glsl */ `
   uniform sampler2D uDye;
   uniform vec3 uDomain;
   uniform float uDt;
+  uniform float uRelax;
+  uniform float uPlumes;
   void main() {
     vec2 ll;
     if (!fromDomain(vUv, uDomain, ll)) { gl_FragColor = vec4(0.0); return; }
@@ -251,8 +266,8 @@ const injectFragment = /* glsl */ `
     vec4 dye = texture2D(uDye, vUv);
     float kw = power(w);
     float deep = smoothstep(0.45, 0.7, patches(ll, uDomain.z, 0.0));
-    vec3 target = ramp(kw) * (0.25 + 0.5 * smoothstep(0.0, 250.0, kw)) * (0.35 + 1.3 * deep);
-    dye.rgb += (target - dye.rgb) * (1.0 - exp(-uDt * ${RELAX.toFixed(2)}));
+    vec3 target = ramp(kw) * (0.25 + 0.5 * smoothstep(0.0, 250.0, kw)) * (0.35 + uPlumes * deep);
+    dye.rgb += (target - dye.rgb) * (1.0 - exp(-uDt * uRelax));
     gl_FragColor = vec4(dye.rgb * smoothstep(0.0, 0.5, w.sea), 1.0);
   }
 `
@@ -266,6 +281,9 @@ const shellFragment = /* glsl */ `
   uniform vec3 uDomain;
   uniform vec2 uDyeTexel;
   uniform vec3 uLight;
+  uniform float uFlatness;
+  uniform float uDiffuse;
+  uniform float uGlint;
   varying vec2 vGeo;
   float lum(vec3 c) { return dot(c, vec3(0.3, 0.5, 0.2)); }
   void main() {
@@ -281,10 +299,10 @@ const shellFragment = /* glsl */ `
     vec2 d = uDyeTexel * 2.5;
     float hx = lum(texture2D(uDye, uv + vec2(d.x, 0.0)).rgb) - lum(texture2D(uDye, uv - vec2(d.x, 0.0)).rgb);
     float hy = lum(texture2D(uDye, uv + vec2(0.0, d.y)).rgb) - lum(texture2D(uDye, uv - vec2(0.0, d.y)).rgb);
-    vec3 n = normalize(vec3(-hx, -hy, 0.05));
-    float diffuse = 0.3 + 0.75 * max(dot(n, uLight), 0.0);
+    vec3 n = normalize(vec3(-hx, -hy, uFlatness));
+    float diffuse = 0.3 + uDiffuse * max(dot(n, uLight), 0.0);
     float glint = pow(max(dot(n, normalize(uLight + vec3(0.0, 0.0, 1.0))), 0.0), 40.0);
-    vec3 c = (1.0 - exp(-0.9 * dye)) * diffuse + glint * 0.3 * (0.3 + ramp(power(w)));
+    vec3 c = (1.0 - exp(-0.9 * dye)) * diffuse + glint * uGlint * (0.3 + ramp(power(w)));
     // A faint wash of the power field under it all
     c += ramp(power(w)) * 0.05;
     gl_FragColor = vec4(c * smoothstep(0.0, 0.6, w.sea), 1.0);
@@ -307,6 +325,8 @@ export class WaveFluidMeshDesc extends WaveDomainMeshDesc<WaveFluidConfig> {
   private divergence?: Target
   private curl?: Target
   private passes: Record<string, ShaderMaterial> = {}
+  /** Tunable as it runs */
+  params: FluidParams = { ...FLUID_DEFAULTS }
 
   private get options() {
     return { simSize: 256, dyeSize: 1280, ...this.config.waveFluid }
@@ -339,9 +359,9 @@ export class WaveFluidMeshDesc extends WaveDomainMeshDesc<WaveFluidConfig> {
     this.passes = {
       clear: this.pass(clearFragment),
       mean: this.pass(meanFragment, { ...geo(), uSize: { value: simSize } }),
-      force: this.pass(forceFragment, { ...geo(), uVelocity: { value: null }, uDt: { value: 0 }, uSize: { value: simSize }, uTime: { value: 0 } }),
+      force: this.pass(forceFragment, { ...geo(), uVelocity: { value: null }, uDt: { value: 0 }, uSize: { value: simSize }, uTime: { value: 0 }, uStir: { value: 0 }, uPull: { value: 0 } }),
       curl: this.pass(curlFragment, { uVelocity: { value: null } }),
-      vorticity: this.pass(vorticityFragment, { uVelocity: { value: null }, uCurl: { value: null }, uDt: { value: 0 } }),
+      vorticity: this.pass(vorticityFragment, { uVelocity: { value: null }, uCurl: { value: null }, uDt: { value: 0 }, uConfinement: { value: 0 } }),
       divergence: this.pass(divergenceFragment, { uVelocity: { value: null } }),
       pressure: this.pass(pressureFragment, { uPressure: { value: null }, uDivergence: { value: null }, uKeep: { value: 1 } }),
       gradient: this.pass(gradientFragment, { uPressure: { value: null }, uVelocity: { value: null } }),
@@ -353,7 +373,7 @@ export class WaveFluidMeshDesc extends WaveDomainMeshDesc<WaveFluidConfig> {
         uDt: { value: 0 },
         uDissipation: { value: 0 },
       }),
-      inject: this.pass(injectFragment, { ...geo(), uDye: { value: null }, uDt: { value: 0 } }),
+      inject: this.pass(injectFragment, { ...geo(), uDye: { value: null }, uDt: { value: 0 }, uRelax: { value: 0 }, uPlumes: { value: 0 } }),
       resample: this.pass(resampleFragment, {
         uSource: { value: null },
         uOld: { value: [0, 0, 1] },
@@ -368,6 +388,9 @@ export class WaveFluidMeshDesc extends WaveDomainMeshDesc<WaveFluidConfig> {
       uDye: { value: this.dye[0].texture },
       uDyeTexel: { value: new Vector2(1 / dyeSize, 1 / dyeSize) },
       uLight: { value: new Vector3(-0.5, 0.6, 0.62).normalize() },
+      uFlatness: { value: 0 },
+      uDiffuse: { value: 0 },
+      uGlint: { value: 0 },
     })
   }
 
@@ -384,26 +407,26 @@ export class WaveFluidMeshDesc extends WaveDomainMeshDesc<WaveFluidConfig> {
 
   protected override simulate(renderer: WebGLRenderer, dt: number, domain: Domain) {
     const [velocity, pressure, dye, mean, divergence, curl] = [this.velocity!, this.pressure!, this.dye!, this.mean!, this.divergence!, this.curl!]
-    const p = this.passes
-    this.run(renderer, p.mean!, mean, { uDomain: domain })
-    this.run(renderer, p.force!, velocity[1], { uVelocity: velocity[0].texture, uDomain: domain, uDt: dt, uTime: this.time })
+    const [p, q] = [this.passes, this.params]
+    this.run(renderer, p.mean!, mean, { uDomain: domain, uSpeed: this.speed })
+    this.run(renderer, p.force!, velocity[1], { uVelocity: velocity[0].texture, uDomain: domain, uDt: dt, uTime: this.time, uStir: q.stir, uPull: q.pull })
     swap(velocity)
     this.run(renderer, p.curl!, curl, { uVelocity: velocity[0].texture })
-    this.run(renderer, p.vorticity!, velocity[1], { uVelocity: velocity[0].texture, uCurl: curl.texture, uDt: dt })
+    this.run(renderer, p.vorticity!, velocity[1], { uVelocity: velocity[0].texture, uCurl: curl.texture, uDt: dt, uConfinement: q.curl })
     swap(velocity)
     this.run(renderer, p.divergence!, divergence, { uVelocity: velocity[0].texture })
-    for (let i = 0; i < PRESSURE_ITERATIONS; i++) {
+    for (let i = 0; i < Math.round(q.pressureIterations); i++) {
       this.run(renderer, p.pressure!, pressure[1], { uPressure: pressure[0].texture, uDivergence: divergence.texture, uKeep: i === 0 ? 0.8 : 1 })
       swap(pressure)
     }
     this.run(renderer, p.gradient!, velocity[1], { uPressure: pressure[0].texture, uVelocity: velocity[0].texture })
     swap(velocity)
-    this.run(renderer, p.advect!, velocity[1], { uMean: mean.texture, uVelocity: velocity[0].texture, uSource: velocity[0].texture, uDt: dt, uDissipation: VELOCITY_DISSIPATION })
+    this.run(renderer, p.advect!, velocity[1], { uMean: mean.texture, uVelocity: velocity[0].texture, uSource: velocity[0].texture, uDt: dt, uDissipation: q.velocityDissipation })
     swap(velocity)
     this.run(renderer, p.advect!, dye[1], { uMean: mean.texture, uVelocity: velocity[0].texture, uSource: dye[0].texture, uDt: dt, uDissipation: 0 })
     swap(dye)
-    this.run(renderer, p.inject!, dye[1], { uDye: dye[0].texture, uDomain: domain, uDt: dt })
+    this.run(renderer, p.inject!, dye[1], { uDye: dye[0].texture, uDomain: domain, uDt: dt, uRelax: q.relax, uPlumes: q.plumes })
     swap(dye)
-    return { uDye: dye[0].texture }
+    return { uDye: dye[0].texture, uFlatness: q.flatness, uDiffuse: q.light, uGlint: q.glint }
   }
 }

@@ -140,8 +140,10 @@ export const domainChunk = /* glsl */ `
 `
 
 // How far (degrees) the waves at `lngLat` carry something in `dt` s, at `speed` of the square a
-// second for a 10 s swell (the longer the period, the faster: gT/2π). Wants uDomain declared
+// second for a 10 s swell (the longer the period, the faster: gT/2π). Wants uDomain declared;
+// uSpeed is the crests' speed (PHASE_SPEED, or as tuned)
 export const travelChunk = /* glsl */ `
+  uniform float uSpeed;
   vec2 travel(Wave w, vec2 lngLat, float dt, float speed) {
     float angle = speed * (w.period / 10.0) * 2.0 * uDomain.z * dt;
     return degrees(angle * w.dir / vec2(max(cos(radians(lngLat.y)), 0.05), 1.0));
@@ -238,6 +240,8 @@ export abstract class WaveDomainMeshDesc<Config extends MeshConfigWithSelectiveE
   private shell?: Mesh<BufferGeometry, ShaderMaterial>
   private domain?: Domain
   protected time = 0
+  /** The crests' speed, as a share of the square a second for a 10 s swell (tunable) */
+  speed = PHASE_SPEED
 
   constructor(...args: ConstructorParameters<typeof MeshDescWithSelectiveEffect<Config, MeshUpdateWithSelectiveEffect>>) {
     super(...args)
@@ -264,6 +268,7 @@ export abstract class WaveDomainMeshDesc<Config extends MeshConfigWithSelectiveE
       uGrid: { value: [grid.width, grid.height, grid.lat0, grid.lng0] },
       uCell: { value: grid.dlon },
       uDomain: { value: [0, 0, 1] },
+      uSpeed: { value: PHASE_SPEED },
     })
   }
 

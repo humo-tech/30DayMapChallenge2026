@@ -30,7 +30,6 @@ import {
   type WebGLRenderer,
 } from 'three'
 import {
-  PHASE_SPEED,
   WaveDomainMeshDesc,
   domainChunk,
   rampChunk,
@@ -51,10 +50,20 @@ type WaveStreamOptions = {
 }
 export type WaveStreamConfig = MeshConfigWithSelectiveEffect & { waveStream?: WaveStreamOptions }
 
-// A crest lives this long (s) before it's born again elsewhere
-const LIFE: [number, number] = [2.5, 7]
-// The wake fades to 1/e in this long (s)
-const FADE = 1.6
+export const STREAM_DEFAULTS = {
+  /** The wake fades to 1/e in this long (s) */
+  fade: 1.6,
+  /** A crest lives this long (s) before it's born again elsewhere */
+  lifeMin: 2.5,
+  lifeMax: 7,
+  /** What a crest adds to the wake each frame */
+  brightness: 0.04,
+  /** A crest's size, drawn into the wake (texels) */
+  pointSize: 1.5,
+  /** How bright the wake shows, under the storms (on top of 0.45) */
+  glow: 0.75,
+}
+export type StreamParams = typeof STREAM_DEFAULTS
 
 const hashChunk = /* glsl */ `
   float hash(vec2 p) {
@@ -93,10 +102,10 @@ const particleFragment = /* glsl */ `
       return;
     }
     // Midpoint step, so the crests bend round with the swell
-    vec2 mid = s.xy + travel(w, s.xy, uDt * 0.5, ${PHASE_SPEED.toFixed(4)});
+    vec2 mid = s.xy + travel(w, s.xy, uDt * 0.5, uSpeed);
     Wave wm = wave(mid);
     if (wm.sea <= 0.0) wm = w;
-    vec2 p = s.xy + travel(wm, mid, uDt, ${PHASE_SPEED.toFixed(4)});
+    vec2 p = s.xy + travel(wm, mid, uDt, uSpeed);
     p.x = mod(p.x + 180.0, 360.0) - 180.0;
     p.y = clamp(p.y, -89.0, 89.0);
     gl_FragColor = vec4(p, s.z + uDt, s.w);
@@ -118,7 +127,7 @@ const advectFragment = /* glsl */ `
     if (!fromDomain(vUv, uDomain, ll)) { gl_FragColor = vec4(0.0); return; }
     Wave w = wave(ll);
     float front;
-    vec2 from = toDomain(ll - travel(w, ll, uDt, ${(PHASE_SPEED / 2).toFixed(4)}), uDomain, front);
+    vec2 from = toDomain(ll - travel(w, ll, uDt, uSpeed * 0.5), uDomain, front);
     float prev = textureLod(uTrail, from, 0.0).r;
     gl_FragColor = vec4(prev * uDecay * smoothstep(0.0, 0.5, w.sea), 0.0, 0.0, 1.0);
   }
@@ -131,6 +140,7 @@ const depositVertex = /* glsl */ `
   uniform vec3 uDomain;
   uniform sampler2D uState;
   uniform float uSide;
+  uniform float uPointSize;
   varying float vBright;
   void main() {
     int n = int(uSide);
@@ -141,13 +151,14 @@ const depositVertex = /* glsl */ `
     float fade = smoothstep(0.0, 0.5, s.z) * smoothstep(0.0, 0.8, s.w - s.z);
     vBright = front > 0.0 ? fade * smoothstep(0.5, 1.0, w.sea) * smoothstep(0.3, 0.8, w.steady) * (0.15 + 0.85 * smoothstep(0.0, 8.0, w.height)) : 0.0;
     gl_Position = vec4(at * 2.0 - 1.0, 0.0, 1.0);
-    gl_PointSize = vBright > 0.0 ? 1.5 : 0.0;
+    gl_PointSize = vBright > 0.0 ? uPointSize : 0.0;
   }
 `
 const depositFragment = /* glsl */ `
+  uniform float uBrightness;
   varying float vBright;
   void main() {
-    gl_FragColor = vec4(vBright * 0.04, 0.0, 0.0, 1.0);
+    gl_FragColor = vec4(vBright * uBrightness, 0.0, 0.0, 1.0);
   }
 `
 
@@ -158,6 +169,7 @@ const shellFragment = /* glsl */ `
   ${rampChunk()}
   uniform vec3 uDomain;
   uniform sampler2D uTrail;
+  uniform float uGlow;
   varying vec2 vGeo;
   void main() {
     vec3 normal = vec3(0.0, 0.0, 1.0); // read by the G-buffer write appended below
@@ -171,7 +183,7 @@ const shellFragment = /* glsl */ `
     float trail = 1.0 - exp(-1.2 * texture2D(uTrail, uv).r);
     // A faint wash of the power field under the moving wake
     float wash = 0.05 + 0.12 * smoothstep(0.0, 300.0, kw);
-    float a = (wash + trail * (0.45 + 0.75 * smoothstep(10.0, 400.0, kw))) * smoothstep(0.0, 0.6, w.sea);
+    float a = (wash + trail * (0.45 + uGlow * smoothstep(10.0, 400.0, kw))) * smoothstep(0.0, 0.6, w.sea);
     gl_FragColor = vec4(ramp(kw) * a, 1.0);
   }
 `
@@ -191,6 +203,8 @@ export class WaveStreamMeshDesc extends WaveDomainMeshDesc<WaveStreamConfig> {
   // The crests, drawn into the trail
   private crests = new Scene()
   private fresh = true
+  /** Tunable as it runs */
+  params: StreamParams = { ...STREAM_DEFAULTS }
 
   private get options() {
     return { particles: 384, trailSize: 2048, ...this.config.waveStream }
@@ -235,7 +249,7 @@ export class WaveStreamMeshDesc extends WaveDomainMeshDesc<WaveStreamConfig> {
         uDt: { value: 0 },
         uSeed: { value: 0 },
         uInit: { value: 1 },
-        uLife: { value: LIFE },
+        uLife: { value: [0, 0] },
       }),
       advect: this.pass(advectFragment, { ...geo(), uTrail: { value: null }, uDt: { value: 0 }, uDecay: { value: 1 } }),
       resample: this.pass(resampleFragment, {
@@ -247,7 +261,7 @@ export class WaveStreamMeshDesc extends WaveDomainMeshDesc<WaveStreamConfig> {
       }),
     }
     // One vertex per crest; the shader finds its texel by gl_VertexID
-    this.deposit = this.pass(depositFragment, { ...geo(), uState: { value: null }, uSide: { value: particles } }, depositVertex)
+    this.deposit = this.pass(depositFragment, { ...geo(), uState: { value: null }, uSide: { value: particles }, uPointSize: { value: 0 }, uBrightness: { value: 0 } }, depositVertex)
     this.deposit.blending = AdditiveBlending
     this.deposit.transparent = true
     const geometry = this.track(new BufferGeometry())
@@ -256,7 +270,7 @@ export class WaveStreamMeshDesc extends WaveDomainMeshDesc<WaveStreamConfig> {
     points.frustumCulled = false
     this.crests.add(points)
 
-    return this.createShell(shellFragment, { ...geo(), uTrail: { value: this.trail[0].texture } })
+    return this.createShell(shellFragment, { ...geo(), uTrail: { value: this.trail[0].texture }, uGlow: { value: 0 } })
   }
 
   protected override begin(renderer: WebGLRenderer): void {
@@ -272,22 +286,26 @@ export class WaveStreamMeshDesc extends WaveDomainMeshDesc<WaveStreamConfig> {
   }
 
   protected override simulate(renderer: WebGLRenderer, dt: number, domain: Domain) {
-    const [state, trail, p] = [this.state!, this.trail!, this.passes]
+    const [state, trail, p, q] = [this.state!, this.trail!, this.passes, this.params]
     this.run(renderer, p.step!, state[1], {
       uState: state[0].texture,
       uDomain: domain,
+      uSpeed: this.speed,
+      uLife: [q.lifeMin, Math.max(q.lifeMin, q.lifeMax)],
       uDt: dt,
       uSeed: Math.random() * 1000,
       uInit: this.fresh ? 1 : 0,
     })
     swap(state)
     this.fresh = false
-    this.run(renderer, p.advect!, trail[1], { uTrail: trail[0].texture, uDomain: domain, uDt: dt, uDecay: Math.exp(-dt / FADE) })
+    this.run(renderer, p.advect!, trail[1], { uTrail: trail[0].texture, uDomain: domain, uSpeed: this.speed, uDt: dt, uDecay: Math.exp(-dt / q.fade) })
     const d = this.deposit!.uniforms
     d.uState!.value = state[0].texture
     d.uDomain!.value = domain
+    d.uPointSize!.value = q.pointSize
+    d.uBrightness!.value = q.brightness
     this.draw(renderer, this.crests, trail[1])
     swap(trail)
-    return { uTrail: trail[0].texture }
+    return { uTrail: trail[0].texture, uGlow: q.glow }
   }
 }

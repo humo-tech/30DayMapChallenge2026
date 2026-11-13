@@ -236,51 +236,52 @@ ECMWF の `mwp` は、エネルギー周期に相当する周期なので、こ�
 - 最初のカメラは北太平洋の真上 11,000km。日本からアリューシャンの南の嵐までが入る。
 - 地図は Day 11 と同じ暗いラスタータイル（papers-dark）を、灰青に染めて陸の形だけを見せる。地球の縁の光（`LimbGlowMeshDesc`）と星空（`StarfieldMeshDesc`）は Day 1 と同じ。
 - 両モードのメッシュを両方追加しておき、表示しているほうだけ `step()` を呼ぶ。切り替えると、そのモードは `reset()` で空から始まり、数秒で埋まる。
+- **パラメータのパネル**：URL に `?gui=1` を付けたときだけ、右上のボタンの下に [lil-gui](https://lil-gui.georgealways.com/)（dat.gui の後継）のパネルが出る（例：`/day/12?gui=1`）。共通の「Waves」（峰の速さ、ブルーム）と、表示中のモードの項目だけが出て、各項目の下に何に効くかを日本語で 1 行添えている。値はシェーダーの uniform として毎フレーム渡しているので、動かしたその場で変わる。`reset` で既定値に戻る。既定値は `WaveFluidMeshDesc.ts` の `FLUID_DEFAULTS`、`WaveStreamMeshDesc.ts` の `STREAM_DEFAULTS`。
 - **寄りすぎの制限**：高度 300km より下には行かせない。Navara 0.3.1 のカメラの `minimumZoomDistance` は、ホイールでのズームを止めなかった。そこで毎フレーム高度を見て、下回っていたら押し戻している。
 
 ---
 
 ## 9. 調整ポイント
 
-`waveField.ts`（両モード）：
+ほとんどはパネルからその場で動かせる（「パネル」の列に名前があるもの）。気に入った値は、既定値（`FLUID_DEFAULTS` / `STREAM_DEFAULTS` / `PHASE_SPEED` / `BLOOM`）に書き写す。
 
-| 設定 | 今の値 | 効果 |
-|---|---|---|
-| `PHASE_SPEED` | 0.05 | 周期 10 秒の峰が毎秒進む、四角に対する割合。エネルギーはその半分 |
-| `MARGIN` | 1.3 | 四角が見えている範囲より広く取る倍率。上げると取り直しが減るが粗くなる |
-| `LIFT` | 3,000 m | シェルの高さ |
-| `rampChunk()` | 紺 → 灰白 | 波パワーの色 |
+両モード（`waveField.ts`、`day12.vue`）：
 
-`WaveFluidMeshDesc.ts`（粘体）：
+| 設定 | パネル | 既定値 | 効果 |
+|---|---|---|---|
+| `PHASE_SPEED` | crest speed | 0.05 | 周期 10 秒の峰が毎秒進む、四角に対する割合。エネルギーはその半分 |
+| `BLOOM` | bloom | 0.6 | 光のにじみ |
+| `MARGIN` | — | 1.3 | 四角が見えている範囲より広く取る倍率。上げると取り直しが減るが粗くなる |
+| `LIFT` | — | 3,000 m | シェルの高さ |
+| `rampChunk()` | — | 紺 → 灰白 | 波パワーの色 |
+| `START` / `MIN_HEIGHT` | — | 北太平洋 11,000km / 300km | 最初のカメラ / これより寄らせない |
 
-| 設定 | 今の値 | 効果 |
-|---|---|---|
-| `STIR` | 25 | かき混ぜの強さ（8m の海で、格子何マス/秒か） |
-| `CURL` | 8 | 渦度強調。上げると細かい渦が増える |
-| `PULL` | 1.5 /s | 乱れがかき混ぜの力に追いつく速さ |
-| `RELAX` | 0.35 /s | インクがその場所の色に近づく速さ。下げると帯が長くなる |
-| `VELOCITY_DISSIPATION` | 0.15 | 乱れの減衰 |
-| `PRESSURE_ITERATIONS` | 20 | 圧力の反復回数 |
-| `simSize` / `dyeSize` | 256 / 1280 | 速度とインクの解像度 |
-| シェルの `0.05`（法線の z） | — | 陰影の深さ。小さいほど起伏が急 |
+粘体（`WaveFluidMeshDesc.ts` の `FLUID_DEFAULTS`）：
 
-`WaveStreamMeshDesc.ts`（流線）：
+| 設定 | パネル | 既定値 | 効果 |
+|---|---|---|---|
+| `stir` | stir | 25 | かき混ぜの強さ（8m の海で、格子何マス/秒か） |
+| `pull` | pull | 1.5 /s | 乱れがかき混ぜの力に追いつく速さ |
+| `curl` | curl (confinement) | 8 | 渦度強調。上げると細かい渦が増える |
+| `pressureIterations` | pressure iterations | 20 | 圧力の反復回数。減らすと軽くなるが、乱れが非圧縮から崩れる |
+| `velocityDissipation` | eddy dissipation | 0.15 | 乱れの減衰 |
+| `relax` | dye relax | 0.35 /s | インクがその場所の色に近づく速さ。下げると帯が長くなる |
+| `plumes` | plumes | 1.3 | 斑の中で余分に足すインクの量。上げると帯がくっきりする |
+| `flatness` | relief flatness | 0.05 | 陰影の平らさ（法線の z）。小さいほど起伏が急 |
+| `light` | light | 0.75 | 光の当たる側の明るさ |
+| `glint` | glint | 0.3 | 照り返しの強さ |
+| `simSize` / `dyeSize` | — | 256 / 1280 | 速度とインクの解像度（`waveFluid` の設定） |
 
-| 設定 | 今の値 | 効果 |
-|---|---|---|
-| `particles` | 384（の 2 乗） | 峰の数 |
-| `trailSize` | 2048 | 航跡の解像度 |
-| `LIFE` | 2.5〜7 秒 | 峰の寿命 |
-| `FADE` | 1.6 秒 | 航跡が 1/e になる時間。上げると筋が長くなる |
-| 描き込みの `0.04` | — | 1 フレームに峰が足す明るさ |
+流線（`WaveStreamMeshDesc.ts` の `STREAM_DEFAULTS`）：
 
-`day12.vue`：
-
-| 設定 | 今の値 | 効果 |
-|---|---|---|
-| `START` | 北太平洋、11,000km | 最初のカメラ |
-| `MIN_HEIGHT` | 300 km | これより寄らせない |
-| `selectiveBloom.strength` | 0.6 | 光のにじみ |
+| 設定 | パネル | 既定値 | 効果 |
+|---|---|---|---|
+| `fade` | wake fade (s) | 1.6 秒 | 航跡が 1/e になる時間。上げると筋が長くなる |
+| `lifeMin` / `lifeMax` | life min / max (s) | 2.5 / 7 秒 | 峰の寿命 |
+| `brightness` | brightness | 0.04 | 1 フレームに峰が足す明るさ |
+| `pointSize` | crest size | 1.5 | 峰の点の大きさ（航跡テクスチャのピクセル） |
+| `glow` | glow | 0.75 | 嵐の海域での航跡の明るさ（0.45 に足す分） |
+| `particles` / `trailSize` | — | 384（の 2 乗）/ 2048 | 峰の数 / 航跡の解像度（`waveStream` の設定） |
 
 ---
 
