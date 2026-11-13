@@ -1,9 +1,10 @@
 # Day 12: Power — 実装解説
 
-世界の海の波を、ECMWF の波浪モデルのデータから Navara の地球儀の上に描く。同じ計算を MapLibre GL JS の地球儀（globe 投影）で動かす版も、隠しページ `/day/12-maplibre` にある（§9）。色は波が運ぶエネルギーの量（**波パワー**）で、凪の紺から嵐の下の白まで、強いほど明るい。見せ方は右上のボタンで 2 通りに切り替えられる。
+世界の海の波を、ECMWF の波浪モデルのデータから Navara の地球儀の上に描く。同じ計算を MapLibre GL JS の地球儀（globe 投影）で動かす版も、隠しページ `/day/12-maplibre` にある（§10）。色は波が運ぶエネルギーの量（**波パワー**）で、凪の紺から嵐の下の白まで、強いほど明るい。見せ方は右上のボタンで 3 通りに切り替えられる。
 
 - **Fluid（粘体）**：Navier–Stokes 方程式を解く流体シミュレーション。波の流れに乗って、波パワーの色のインクが流れ、渦に混ぜられ、水面のように陰影が付く。
 - **Streamlines（流線）**：波の峰を表す粒子が波の進む向きに走り、エネルギーの航跡を残す。
+- **Crests（峰）**：平たい「^」の記号が 1 つずつ、細い尾を引きながら波の向きにゆっくり流れる。色は波高。
 
 計算はほぼすべて GPU（WebGL2 のフラグメントシェーダー）で行い、CPU は毎フレーム描画の命令を出すだけ。どちらの見せ方も「いま見えている範囲」だけを計算するので、拡大するとその縮尺で細かく描き直される。
 
@@ -14,10 +15,11 @@
 | `app/maps/lib/waveSim.ts` | 両モードの共通部分（地図に依存しない、three.js だけ）。波データの補間、見えている範囲の追従、基底クラス `WaveSim` |
 | `app/maps/lib/waveFluidSim.ts` | 粘体モード（Stable Fluids）：`WaveFluidSim` |
 | `app/maps/lib/waveStreamSim.ts` | 流線モード（粒子と航跡）：`WaveStreamSim` |
+| `app/maps/lib/waveCrestSim.ts` | 峰モード（「^」の記号と尾）：`WaveCrestSim` |
 | `app/maps/lib/waveGui.ts` | `?gui=1` のパラメータのパネル（両方の地図で共通） |
 | `app/maps/day12.vue` | Navara 版のページ本体。地球儀、モード切り替え、毎フレームの呼び出し |
 | `app/maps/lib/waveField.ts` | Navara 版の土台：メッシュ記述子 `WaveDomainMeshDesc`、カメラから見えている範囲、楕円体を覆うシェル |
-| `app/maps/lib/WaveFluidMeshDesc.ts` / `WaveStreamMeshDesc.ts` | Navara 版の各モード（`WaveFluidSim` / `WaveStreamSim` を包むだけ） |
+| `app/maps/lib/WaveFluidMeshDesc.ts` / `WaveStreamMeshDesc.ts` / `WaveCrestMeshDesc.ts` | Navara 版の各モード（`WaveFluidSim` / `WaveStreamSim` / `WaveCrestSim` を包むだけ） |
 | `app/maps/day12-maplibre.vue` / `app/pages/day/12-maplibre.vue` | MapLibre 版のページ（隠しページ `/day/12-maplibre`） |
 | `app/maps/lib/waveGlobeLayer.ts` | MapLibre 版の土台：カスタムレイヤー、globe 投影に乗るシェル |
 
@@ -224,7 +226,25 @@ Jos Stam の Stable Fluids を、[WebGL Fluid Simulation](https://github.com/Pav
 
 ---
 
-## 7. 色：波パワー
+## 7. 峰：`waveCrestSim.ts`
+
+3 つ目の見せ方。波の峰を、平たい「^」の記号 1 つずつで表し、波の向きにゆっくり流す。色は**波高**（他の 2 つは波パワー）。
+
+### 記号
+
+- 動かし方は流線の峰とまったく同じ（`particleFragment` を共有）。四角のどこかに生まれ、波の向きに位相速度で進み、寿命が来たら別の場所に生まれ直す。ただし速さは他の見せ方の 0.35 倍（`pace`）、寿命は 1.2〜2.8 秒と短く、数も 40×40 = 1,600 個に絞る。1 つの波がゆったり盛り上がって消えていく感じにするため。
+- 毎フレーム、四角のテクスチャ（2048×2048）を空にして、記号を点スプライトで描き直す。スプライトの中で、その場の波の向き（四角の上での向き）に合わせて回した「^」を描く。頂点は波の進む向き。周期が長いほど大きい。寿命の最初の 1/3 で現れ、最後の半分で消える。
+- 色は波高を、波パワーと同じ配色（紺 → 青 → 水色 → 白）で、0〜12m の対数で塗る。下にも同じ色を薄く敷く。
+
+### 尾
+
+記号だけでは、ゆっくりで短い寿命のせいで「流れ」に見えず、瞬いているようにしか見えなかった。そこで、記号の後ろに細い尾を引く。
+
+- 記号のある所に小さな点（3 テクセル）を、もう 1 枚のテクスチャに毎フレーム落とす。そのテクスチャは毎フレーム少しずつ薄める（0.25 秒で 1/e、`tail`）。点が動くので、記号が来た道が細い線で残る。流線の航跡と同じ作りで、移流はしない。
+- 記号そのものを薄めて残す方法も試したが、「^」が自分の長さだけ引きずられて、中の詰まった六角形の塊になった。
+- 四角を取り直すときは、尾のテクスチャだけを新しい四角に写す（記号は地球上にあるので、そのまま）。
+
+## 8. 色：波パワー
 
 色は**波パワー**、つまり波の峰 1m あたりが運ぶエネルギーの流量。
 
@@ -238,7 +258,7 @@ ECMWF の `mwp` は、エネルギー周期に相当する周期なので、こ�
 
 ---
 
-## 8. ページ：`day12.vue`
+## 9. ページ：`day12.vue`
 
 - 最初のカメラは北太平洋の真上 11,000km。日本からアリューシャンの南の嵐までが入る。
 - 地図は Day 11 と同じ暗いラスタータイル（papers-dark）を、灰青に染めて陸の形だけを見せる。地球の縁の光（`LimbGlowMeshDesc`）と星空（`StarfieldMeshDesc`）は Day 1 と同じ。
@@ -248,7 +268,7 @@ ECMWF の `mwp` は、エネルギー周期に相当する周期なので、こ�
 
 ---
 
-## 9. MapLibre GL JS 版：`/day/12-maplibre`
+## 10. MapLibre GL JS 版：`/day/12-maplibre`
 
 同じ 2 つの見せ方を、MapLibre GL JS の地球儀（globe 投影）の上で動かす隠しページ。どこからもリンクしておらず、`noindex`。ヘッダーから Navara 版へ戻れる。シミュレーションのコード（`waveSim.ts`・`waveFluidSim.ts`・`waveStreamSim.ts`）は Navara 版と同じもので、地図とつなぐ部分だけが違う。
 
@@ -283,7 +303,7 @@ three.js は GL の状態を自分で覚えているが、MapLibre が描いた�
 
 ---
 
-## 10. 調整ポイント
+## 11. 調整ポイント
 
 ほとんどはパネルからその場で動かせる（「パネル」の列に名前があるもの）。気に入った値は、既定値（`FLUID_DEFAULTS` / `STREAM_DEFAULTS` / `PHASE_SPEED` / `BLOOM`）に書き写す。
 
@@ -325,9 +345,20 @@ three.js は GL の状態を自分で覚えているが、MapLibre が描いた�
 | `glow` | glow | 0.75 | 嵐の海域での航跡の明るさ（0.45 に足す分） |
 | `particles` / `trailSize` | — | 384（の 2 乗）/ 2048 | 峰の数 / 航跡の解像度（`waveStream` の設定） |
 
+峰（`waveCrestSim.ts` の `CREST_DEFAULTS`）：
+
+| 設定 | パネル | 既定値 | 効果 |
+|---|---|---|---|
+| `size` | size | 34 | 周期 10 秒の「^」の大きさ（四角のテクスチャのピクセル）。周期が長いほど大きい |
+| `brightness` | brightness | 1 | 「^」と尾の明るさ |
+| `pace` | pace | 0.35 | 進む速さ（crest speed に対する倍率） |
+| `lifeMin` / `lifeMax` | life min / max (s) | 1.2 / 2.8 秒 | 「^」の寿命 |
+| `tail` | tail (s) | 0.25 秒 | 尾が 1/e になる時間。上げると尾が長くなる |
+| `marks` / `size` | — | 40（の 2 乗）/ 2048 | 記号の数 / テクスチャの解像度（`WaveCrestSim` の設定） |
+
 ---
 
-## 11. 限界
+## 12. 限界
 
 - 波のデータは約 25km の格子。拡大したときに見える細かい渦やうねりは、見た目のための演出（かき混ぜの力と渦度強調）で、データにはない。流れの向き・速さ・色はデータに従う。
 - データは 1 時刻だけ（予報 0 時間目）。時間変化はない。
