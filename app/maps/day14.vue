@@ -121,8 +121,9 @@ onMounted(async () => {
     // multiplier still rises to 4 if the memory runs short
     lodFog: { enabled: true, density: 2e-4, sseFactor: 2 },
     memoryBudget: { sseMultiplierMin: 1, sseMultiplierMax: 4 },
-    // Tiles are refined until they're within 1 px of the screen's pixels (default 2)
-    maxSse: 1,
+    // Tiles are refined until their error is under half a pixel (default 2): a zoom level deeper
+    // than 1, as the standard map's 256 px tiles are otherwise stretched on a high-density screen
+    maxSse: 0.5,
   })
   view = v
   v.addPlugin(new DefaultPlugin())
