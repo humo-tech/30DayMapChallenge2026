@@ -184,8 +184,8 @@ onMounted(async () => {
 
   // An afternoon sun, from the side, so the walls differ from the roofs
   v.atmosphere.date = new Date('2026-11-14T06:10:00Z')
-  v.addLight({ ambient: { intensity: 1.9 } })
-  v.addLight({ sun: { intensity: 1.1 } })
+  v.addLight({ ambient: { intensity: 2.2 } })
+  v.addLight({ sun: { intensity: 0.75 } })
   v.addLayer({ type: 'terrain', ellipsoid: {} })
   v.globe.color = hex(GROUND)
   v.setCamera(cameraAt(sample(Number(route.query.t) || 0)))
