@@ -28,7 +28,9 @@ const M_LAT = 110_950
 const GROUND = '#c8ecbc'
 const SKY = '#ffe4ee'
 const STITCH = '#ffffff'
-const INK = '#6a4a8c'
+// The roof lines: a pale ink, thin and see-through
+const INK = '#9a7cb8'
+const INK_OPACITY = 0.4
 const hex = (s: string) => new Color().setStyle(s)
 
 // Land use as patchwork, as in Day 10
@@ -271,13 +273,13 @@ onMounted(async () => {
       type: 'vector',
       source: city,
       sourceLayers: ['building'],
-      polyline: { color: hex(INK), width: 1.2, geometryTypes: ['polygon'], clampToGround: false },
+      polyline: { color: hex(INK), width: 0.9, opacity: INK_OPACITY, geometryTypes: ['polygon'], clampToGround: false },
     })
     layer.on('featureUpdated', ({ evaluator }) => {
       evaluator.evaluate(
         ({ properties }) => {
           const h = Number(properties?.['h'] ?? 8)
-          return { height: hang ? CEILING - h : h, color: hex(INK), width: 1.2 }
+          return { height: hang ? CEILING - h : h, color: hex(INK), width: 0.9, opacity: INK_OPACITY }
         },
         { filters: ['h'] },
       )
