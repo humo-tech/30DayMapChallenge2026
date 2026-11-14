@@ -177,7 +177,7 @@ export class CraterPointsMeshDesc extends MeshDesc<CraterPointsConfig, CraterPoi
         uFinest: { value: [tree.spacing.at(-1)!, tree.spacing[tree.maxLevelOut]!] },
         uRimRadius: { value: tree.rimRadius },
         uMaxPx: { value: maxPx },
-        uPixelRatio: { value: window.devicePixelRatio },
+        uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 3) },
         uHalfHeight: { value: window.innerHeight / 2 },
       },
     })

@@ -132,7 +132,7 @@ export class SnowfallMeshDesc extends MeshDesc<SnowfallConfig, SnowfallUpdate, P
         uSize: { value: size },
         uFar: { value: far },
         uColor: { value: new Color(0.9, 0.93, 1.0) },
-        uPixelRatio: { value: window.devicePixelRatio },
+        uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 3) },
         uHalfHeight: { value: window.innerHeight / 2 },
       },
       transparent: true,

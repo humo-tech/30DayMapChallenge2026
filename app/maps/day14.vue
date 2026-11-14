@@ -59,6 +59,10 @@ const SKY = {
   storm: { horizon: new ThreeColor('#7c8794'), zenith: new ThreeColor('#3d4653') },
 }
 
+// Navara caps a phone's pixel ratio at 2, which leaves a 3x screen soft. Render at the screen's own
+// ratio (up to 3); the point and snow shaders size their sprites with the same number
+const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 3)
+
 const route = useRoute()
 const container = ref<HTMLDivElement>()
 const whiteout = ref(1)
@@ -119,6 +123,10 @@ onMounted(async () => {
     container: container.value!,
     backgroundColor: new Color().setStyle('#d4dde6'),
     animation: true,
+    pixelRatio: PIXEL_RATIO,
+    // A phone's default LOD fog keeps the tiles a level or two coarser than on a desktop
+    // (sseFactor 6-12 against 2): this map is looked at from far up, so use the desktop's
+    lodFog: { enabled: true, density: 2e-4, sseFactor: 2 },
   })
   view = v
   v.addPlugin(new DefaultPlugin())
@@ -302,6 +310,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .day14 {
   position: relative;
+  touch-action: none;
 }
 
 .whiteout {
@@ -341,5 +350,21 @@ onBeforeUnmount(() => {
 
 .tour:hover {
   color: var(--accent);
+}
+
+/* On a phone the header panel spans the top: the button goes to the bottom, clear of the home bar */
+@media (max-width: 600px) {
+  .controls {
+    top: auto;
+    right: auto;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .chip {
+    padding: 12px 20px;
+    font-size: 15px;
+  }
 }
 </style>
