@@ -13,8 +13,8 @@ Day 10 のパステルなぬいぐるみの原宿（Overture Maps の PMTiles �
 | ファイル | 役割 |
 |---|---|
 | `scripts/day15/extract_harajuku.py` | Overture の PMTiles から原宿だけを切り出して痩せさせ、小さな PMTiles 2 つにする |
-| `public/data/day15/harajuku.pmtiles` | z14 の 3×3 タイル。道（`segment`：class, subtype）と建物（`building`：高さ `h`、色番号 `c`）。1.4 MB |
-| `public/data/day15/harajuku-base.pmtiles` | z13 の 2×2 タイル。地面（`land`, `land_use`）と水（`water`）。0.11 MB |
+| `public/data/day15/harajuku.pmtiles` | z14 の 3×3 タイル。道（`segment`：class, subtype）と建物（`building`：高さ `h`、色番号 `c`）。1.3 MB |
+| `public/data/day15/harajuku-base.pmtiles` | z13 の 2×2 タイル。地面（`land`, `land_use`）と水（`water`）。0.09 MB |
 | `app/maps/day15.vue` | ページ本体。地図の層、ツアー、鏡、鏡文字 |
 | `app/maps/lib/WarpEffectDesc.ts` | 地図の歪み（ポストエフェクト） |
 | `app/maps/lib/MeltingClocksMeshDesc.ts` | 溶ける時計（Navara のメッシュ記述子） |
@@ -49,8 +49,9 @@ Day 10 の MapLibre 版は、同じ原宿で **64 MB**、Navara にそのまま 
 
 - Overture の S3 から Range リクエストで、原宿の周り（z14 の 3×3 タイル、地面は z13 の 2×2）だけを読む。
 - MVT をデコードして、スタイルが読む属性だけに削る。道は `class` と `subtype`、地面と水は `subtype`、建物は高さ（`height`、なければ階数×3.2 m、なければ 8 m）と、`id` の先頭 1 桁から決めた色番号だけ。地下の建物は捨てる。
+- 描かない地物も捨てる。歩道・階段などの道、色を決めていない土地利用や水の種類、木の点。
 - 道と建物は同じ z14 のタイルなので、2 つの MVT をバイト列のまま連結して 1 つのタイルにする（protobuf は連結すると両方のレイヤーが入った 1 つのメッセージになる）。
-- 結果は 2 ファイル合わせて **1.5 MB**。Navara は、いま見えているタイルだけを Range リクエストで読む。
+- 結果は 2 ファイル合わせて **1.4 MB**。Navara は、いま見えているタイルだけを Range リクエストで読む。
 
 ## 2. 地図の層
 

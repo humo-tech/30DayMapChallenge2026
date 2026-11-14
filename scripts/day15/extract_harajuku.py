@@ -49,6 +49,17 @@ KEEP = {
     "land_use": ("subtype",),
     "water": ("subtype",),
 }
+# What the style draws, so the rest is dropped (keep in step with app/maps/day15.vue): the
+# subtypes it has a colour for, and the roads it leaves off (footpaths, steps, ...)
+LAND = {"forest", "grass", "shrub", "wetland", "sand"}
+LAND_USE = {
+    "park", "recreation", "horticulture", "managed", "agriculture", "cemetery", "residential",
+    "developed", "education", "medical", "religious", "pedestrian", "transportation",
+    "construction", "military",
+}
+WATER = {"river", "lake", "pond", "canal", "ocean", "reservoir", "water", "stream", "basin", "lagoon"}
+SUBTYPES = {"land": LAND, "land_use": LAND_USE, "water": WATER}
+FOOT = {"footway", "steps", "path", "cycleway", "bridleway", "pedestrian", "crosswalk", "sidewalk", "track"}
 FLOOR_M = 3.2
 DEFAULT_HEIGHT = 8.0
 
@@ -90,6 +101,17 @@ def slim(raw: bytes, keep: set[str]) -> bytes:
         feats = []
         for f in layer["features"]:
             p = f["properties"]
+            kind = f["geometry"]["type"]
+            if name == "segment":
+                # Roads and rails only; a footpath is not drawn
+                if kind not in ("LineString", "MultiLineString"):
+                    continue
+                if p.get("subtype") != "rail" and (p.get("subtype", "road") != "road" or p.get("class") in FOOT):
+                    continue
+            elif name in SUBTYPES:
+                # Patches only (the points are single trees, which are not drawn)
+                if kind not in ("Polygon", "MultiPolygon") or p.get("subtype") not in SUBTYPES[name]:
+                    continue
             if name == "building":
                 if p.get("is_underground"):
                     continue

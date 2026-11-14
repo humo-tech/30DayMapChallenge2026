@@ -7,7 +7,7 @@
 //
 // Navara reads PMTiles natively, but Overture's own archives cost too much for that (z14 tiles
 // of ~1 MB a theme over Tokyo: Day 10 went to MapLibre over it). scripts/day15/extract_harajuku.py
-// cuts a 1.5 MB pair of its own: only the tiles round here, and the properties the style reads
+// cuts a 1.4 MB pair of its own: only the tiles round here, and the properties the style reads
 import ThreeView, { Color, type Layer } from '@navaramap/three'
 import { DefaultPlugin, type DefaultDescriptions } from '@navaramap/three-default-plugin'
 import { PASTELS } from './lib/plushStyle'
