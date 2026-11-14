@@ -113,9 +113,14 @@ onMounted(async () => {
     backgroundColor: new Color().setStyle('#d4dde6'),
     animation: true,
     pixelRatio: PIXEL_RATIO,
-    // A phone's default LOD fog keeps the tiles a level or two coarser than on a desktop
-    // (sseFactor 6-12 against 2): this map is looked at from far up, so use the desktop's
+    // A phone's defaults keep the tiles coarser than on a desktop: LOD fog (sseFactor 6-12 against
+    // 2) and a resting memory-pressure multiplier on the screen-space error (4-8 against 1). This
+    // map is looked at from far up, where that's a level or two of blur, so use the desktop's. The
+    // multiplier still rises to 4 if the memory runs short
     lodFog: { enabled: true, density: 2e-4, sseFactor: 2 },
+    memoryBudget: { sseMultiplierMin: 1, sseMultiplierMax: 4 },
+    // Tiles are refined until they're within 1 px of the screen's pixels (default 2)
+    maxSse: 1,
   })
   view = v
   v.addPlugin(new DefaultPlugin())
