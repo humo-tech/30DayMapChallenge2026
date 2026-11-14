@@ -238,3 +238,31 @@ a {
   width: 100%;
   height: 100%;
 }
+
+/* On a phone the header panel shrinks to the nav and the title: the map gets the room */
+@media (max-width: 600px) {
+  .map-header {
+    top: 8px;
+    left: 8px;
+    max-width: calc(100vw - 16px);
+    padding: 6px 10px;
+    border-radius: 8px;
+  }
+
+  .map-header .nav {
+    font-size: 12px;
+    gap: 8px;
+  }
+
+  .map-header h1 {
+    margin: 2px 0 0;
+    font-size: 15px;
+    line-height: 1.3;
+  }
+
+  .map-header .subtitle,
+  .map-header .date,
+  .map-header .desc {
+    display: none;
+  }
+}
