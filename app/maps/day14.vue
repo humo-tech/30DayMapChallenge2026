@@ -52,10 +52,10 @@ const SKY = {
   storm: { horizon: new ThreeColor('#7c8794'), zenith: new ThreeColor('#3d4653') },
 }
 
-// Navara caps a phone's pixel ratio at 2, which leaves a 3x screen soft. Render at the screen's own
-// ratio (up to 3); the point and snow shaders size their sprites with the same number
 // A touch screen, or a narrow one (Navara's own test for a phone)
 const IS_PHONE = matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768
+// Navara caps a phone's pixel ratio at 2, which leaves a 3x screen soft. Render at the screen's own
+// ratio (up to 3); the snow shader sizes its flakes with the same number
 const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 3)
 
 const route = useRoute()
