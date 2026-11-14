@@ -1,12 +1,11 @@
 <script setup lang="ts">
 // Day 14: Borgesian map — Mt. Fuji, from the map down to the ground itself. GSI's standard map
 // seen from straight above turns into the aerial photo, the mountain rises out of it, the
-// summit sharpens into VIRTUAL SHIZUOKA's 20 cm photo while the rest of the mountain sinks
-// away, and the camera goes down into the crater, where snow falls and settles on the ground
+// summit sharpens into VIRTUAL SHIZUOKA's 20 cm photo, and the camera goes down into the
+// crater, where snow falls and settles on the ground
 import ThreeView, { Color, JAPAN_GSI_ELEVATION_DECODER } from '@navaramap/three'
 import { DefaultPlugin, type DefaultDescriptions } from '@navaramap/three-default-plugin'
 import { Color as ThreeColor, TextureLoader } from 'three'
-import { CloudDeckMeshDesc, type CloudDeckConfig } from './lib/CloudDeckMeshDesc'
 import { CraterSurfaceMeshDesc, type CraterSurfaceConfig } from './lib/CraterSurfaceMeshDesc'
 import { SkyDomeMeshDesc, type SkyDomeConfig } from './lib/SkyDomeMeshDesc'
 import { SnowfallMeshDesc, type SnowfallConfig } from './lib/SnowfallMeshDesc'
@@ -24,8 +23,8 @@ type Key = { t: number; bearing: number; dist: number; height: number; pitch: nu
 const KEYS: Key[] = [
   { t: 0, bearing: 180, dist: 1, height: 42000, pitch: -90 }, // the standard map, straight down
   { t: 14, bearing: 180, dist: 1, height: 40000, pitch: -90 },
-  { t: 20, bearing: 182, dist: 400, height: 30000, pitch: -86 }, // the photo
-  { t: 30, bearing: 200, dist: 14000, height: 9500, pitch: -22 }, // the mountain risen
+  { t: 20, bearing: 182, dist: 400, height: 30000, pitch: -86 },
+  { t: 30, bearing: 200, dist: 14000, height: 9500, pitch: -22 }, // the mountain risen, in the photo
   { t: 38, bearing: 215, dist: 3200, height: 5200, pitch: -28 },
   { t: 45, bearing: 225, dist: 1100, height: 4300, pitch: -30 }, // over the crater
   { t: 52, bearing: 235, dist: 420, height: 3830, pitch: -14 }, // over the rim
@@ -39,10 +38,9 @@ const ROUND_S = 92
 const SPEED = 2
 
 // Phases, in s into the round: [from, to]
-const PHOTO = [14, 19] // the standard map fades into the photo
-const RISE = [20, 29] // the terrain rises out of the flat map
+const RISE = [20, 29] // the terrain rises under the standard map as the camera tilts
+const PHOTO = [28, 31] // ... and the map fades into the photo as the tilt ends
 const ASSEMBLE = [33, 39] // the summit's photo comes in from the crater floor out
-const SINK = [41, 50] // the rest of the mountain sinks away, leaving the summit's ground
 const STORM = [50, 64] // the sky closes in and the snow starts
 const SETTLE = [55, 88] // snow settles on the ground
 const WHITEOUT = [87, 91] // the snow fills the view; the round starts again from white
@@ -124,9 +122,12 @@ onMounted(async () => {
     lodFog: { enabled: true, density: 2e-4, sseFactor: 2 },
     memoryBudget: { sseMultiplierMin: 1, sseMultiplierMax: 4 },
     // Tiles are refined until their error is under this many pixels (default 2). On a desktop, half
-    // a pixel: a zoom level deeper, as the standard map's 256 px tiles are otherwise stretched on
-    // a high-density screen. A phone is sharp enough at 1, and has less to spare
-    maxSse: IS_PHONE ? 1 : 0.5,
+    // a CSS pixel: a zoom level deeper, as the standard map's 256 px tiles are otherwise stretched.
+    // The error is in device pixels, so a 2x screen would go a level deeper again: two levels in
+    // all, which overran the GPU budget (2 GB) and had tiles evicted and coarsened (the SSE
+    // multiplier up to 1.6) all the way round. Scaled by the ratio, it gets a 1x screen's tiles.
+    // A phone is sharp enough at 1, and has less to spare
+    maxSse: IS_PHONE ? 1 : 0.5 * PIXEL_RATIO,
   })
   view = v
   v.addPlugin(new DefaultPlugin())
@@ -134,7 +135,6 @@ onMounted(async () => {
   await v.init()
   if (view !== v) return // unmounted while initializing
   v.registerMesh('skyDome', SkyDomeMeshDesc)
-  v.registerMesh('cloudDeck', CloudDeckMeshDesc)
   v.registerMesh('craterSurface', CraterSurfaceMeshDesc)
   v.registerMesh('snowfall', SnowfallMeshDesc)
 
@@ -156,8 +156,6 @@ onMounted(async () => {
 
   const skyConfig: SkyDomeConfig = { skyDome: {}, geodetic: origin }
   const sky = v.addMesh<SkyDomeMeshDesc>(skyConfig)
-  const deckConfig: CloudDeckConfig = { cloudDeck: {}, geodetic: origin }
-  const deck = v.addMesh<CloudDeckMeshDesc>(deckConfig)
   v.addLight({ ambient: { intensity: 1.0 } })
 
   // GSI's DEM under its standard map and its photo, the map on top
@@ -170,7 +168,7 @@ onMounted(async () => {
   })
   const terrain = v.addLayer({ type: 'terrain', source: dem, terrain: { exaggeration: 0 } })
   const photo = v.addSource({ type: 'raster-tile', url: `${GSI}/seamlessphoto/{z}/{x}/{y}.jpg`, maxZoom: 18 })
-  const photoLayer = v.addLayer({ type: 'raster', source: photo, raster: { show: true } })
+  v.addLayer({ type: 'raster', source: photo })
   const std = v.addSource({ type: 'raster-tile', url: `${GSI}/std/{z}/{x}/{y}.png`, maxZoom: 18 })
   const stdLayer = v.addLayer({ type: 'raster', source: std, raster: { opacity: 1 } })
 
@@ -222,14 +220,11 @@ onMounted(async () => {
       stdLayer.update({ type: 'raster', source: std, raster: { opacity, show: opacity > 0 } })
       lastOpacity = opacity
     }
-    // Rises from flat, settles a few metres low under the summit's own surface, then sinks away
-    const exaggeration =
-      Math.round((phase(t, RISE) - 0.002 * phase(t, ASSEMBLE) - 0.998 * phase(t, SINK)) * 1000) / 1000
+    // Rises from flat, then settles a few metres low under the summit's own surface. From down in
+    // the crater the rim hides the rest of the mountain, so it stays as it is
+    const exaggeration = Math.round((phase(t, RISE) - 0.002 * phase(t, ASSEMBLE)) * 1000) / 1000
     if (exaggeration !== lastExaggeration) {
-      // Sunk all the way, the mountain and its photo are gone
-      const show = exaggeration > 0 || t < RISE[1]!
-      terrain.update({ type: 'terrain', source: dem, terrain: { exaggeration, show } })
-      photoLayer.update({ type: 'raster', source: photo, raster: { show } })
+      terrain.update({ type: 'terrain', source: dem, terrain: { exaggeration } })
       lastExaggeration = exaggeration
     }
 
@@ -245,9 +240,6 @@ onMounted(async () => {
     horizon.lerpColors(SKY.day.horizon, SKY.storm.horizon, storm)
     zenith.lerpColors(SKY.day.zenith, SKY.storm.zenith, storm)
     sky.ref.setColors(horizon, zenith)
-    // The sea of clouds rises from sea level to ~350 m under the crater floor as the mountain sinks
-    const sink = phase(t, SINK)
-    deck.ref.set(-origin.height + (origin.height - 350) * sink, horizon, sink > 0)
 
     // From white into the map, and into white at the end of the round
     whiteout.value = Math.max(1 - phase(t, [0, 2.5]), phase(t, WHITEOUT))
