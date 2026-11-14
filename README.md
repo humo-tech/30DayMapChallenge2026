@@ -60,6 +60,7 @@ scripts/.venv/bin/python scripts/day01/extract_tottori.py   # --release 2026-10-
 | `scripts/day09/extract_tokyo_mesh.py` | Mainland Tokyo on the 1 km grid: weekday late-night (01–04) and midday (11–14) people in the latest month (2021-12) of MLIT's people-flow open data → `public/data/day09/tokyo_mesh.json` |
 | `scripts/day12/fetch_waves.py` | Significant wave height, mean direction and mean period of ECMWF's IFS wave model (open data, 0.25°) for the latest run, as raw float16 → `public/data/day12/waves.bin` (+ `waves.json`) |
 | `scripts/day13/extract_shibuya.py` | Around Shibuya Station from Overture Maps: the walkable street network as a graph (cut at its connectors, largest connected part), building footprints with heights, and coffee shops → `public/data/day13/streets.json`, `buildings.geojson`, `coffee.json` |
+| `scripts/day15/extract_harajuku.py` | Around Harajuku from Overture Maps' own PMTiles (base, transportation, buildings): only the nine z14 tiles (four z13 for the ground) and only the few properties the style reads, as two small PMTiles of 1.5 MB in all → `public/data/day15/harajuku.pmtiles`, `harajuku-base.pmtiles` |
 
 ## Deployment (GitHub Pages)
 
