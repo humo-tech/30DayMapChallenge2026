@@ -29,7 +29,7 @@ const fragmentShader = /* glsl */ `
     float t = uTime;
     vec2 p = uv;
     // Two ripples crossing, each bending the other
-    float w = 0.011 * uWobble + 0.02 * uFall;
+    float w = 0.022 * uWobble + 0.04 * uFall;
     uv += w * vec2(
       sin(p.y * 9.0 + t * 0.8 + 1.7 * sin(p.x * 4.0 - t * 0.45)),
       cos(p.x * 8.0 - t * 0.7 + 1.5 * sin(p.y * 5.0 + t * 0.35))
@@ -41,18 +41,18 @@ const fragmentShader = /* glsl */ `
     vec2 c = uv - 0.5;
     c.x *= uAspect;
     float r = length(c);
-    float swirl = uFall * 1.6 * exp(-r * r * 6.0) * sin(t * 0.6 + 0.8);
+    float swirl = uFall * 3.2 * exp(-r * r * 6.0) * sin(t * 0.6 + 0.8);
     float s = sin(swirl), co = cos(swirl);
     c = mat2(co, -s, s, co) * c;
-    c *= 1.0 - uFall * 0.22 * exp(-r * r * 9.0);
+    c *= 1.0 - uFall * 0.44 * exp(-r * r * 9.0);
     c.x /= uAspect;
     // A touch of zoom keeps the pushed edge inside the picture
-    uv = 0.5 + c * (1.0 - 0.02 * uWobble - 0.05 * uFall);
+    uv = 0.5 + c * (1.0 - 0.04 * uWobble - 0.1 * uFall);
   }
 
   void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
     // Colours drift apart towards the edge, and more when falling
-    vec2 d = (uv - 0.5) * (0.0015 * uWobble + 0.012 * uFall);
+    vec2 d = (uv - 0.5) * (0.003 * uWobble + 0.024 * uFall);
     float r = texture2D(inputBuffer, uv + d).r;
     float b = texture2D(inputBuffer, uv - d).b;
     outputColor = vec4(r, inputColor.g, b, inputColor.a);
