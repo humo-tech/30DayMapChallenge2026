@@ -1,6 +1,5 @@
-// The front the crater's photo surface and its points sweep in and out with, shared by
-// CraterSurfaceMeshDesc and CraterPointsMeshDesc so the photo breaks into points exactly where
-// they appear: 0 on the crater floor, ~1 at the survey's edges, ragged with value noise
+// The front the crater's photo surface sweeps in with, and the value noise its snow drifts
+// use: 0 on the crater floor, ~1 at the survey's edges, ragged
 export const craterFront = /* glsl */ `
   float craterHash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
