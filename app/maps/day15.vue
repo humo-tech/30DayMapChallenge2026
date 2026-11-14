@@ -28,9 +28,6 @@ const M_LAT = 110_950
 const GROUND = '#c8ecbc'
 const SKY = '#ffe4ee'
 const STITCH = '#ffffff'
-// The roof lines: a pale ink, thin and see-through
-const INK = '#9a7cb8'
-const INK_OPACITY = 0.4
 const hex = (s: string) => new Color().setStyle(s)
 
 // Land use as patchwork, as in Day 10
@@ -184,7 +181,7 @@ onMounted(async () => {
   await v.init()
   if (view !== v) return // unmounted while initializing
 
-  // An afternoon sun, from the side, so the walls differ from the roofs
+  // An afternoon sun, from the side: the walls a shade darker than the roofs, no more
   v.atmosphere.date = new Date('2026-11-14T06:10:00Z')
   v.addLight({ ambient: { intensity: 2.2 } })
   v.addLight({ sun: { intensity: 0.75 } })
@@ -267,29 +264,8 @@ onMounted(async () => {
     })
     return layer
   }
-  // Piped in ink, as the roads are in pink: the roofs' edges, drawn as lines at the roofs' height
-  const piped = (hang: boolean) => {
-    const layer = v.addLayer({
-      type: 'vector',
-      source: city,
-      sourceLayers: ['building'],
-      polyline: { color: hex(INK), width: 0.9, opacity: INK_OPACITY, geometryTypes: ['polygon'], clampToGround: false },
-    })
-    layer.on('featureUpdated', ({ evaluator }) => {
-      evaluator.evaluate(
-        ({ properties }) => {
-          const h = Number(properties?.['h'] ?? 8)
-          return { height: hang ? CEILING - h : h, color: hex(INK), width: 0.9, opacity: INK_OPACITY }
-        },
-        { filters: ['h'] },
-      )
-    })
-    return layer
-  }
   buildings(false)
   buildings(true)
-  piped(false)
-  piped(true)
 
   v.attribution?.add([
     {
