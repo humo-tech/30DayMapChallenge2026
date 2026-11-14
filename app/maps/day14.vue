@@ -54,6 +54,8 @@ const SKY = {
 
 // Navara caps a phone's pixel ratio at 2, which leaves a 3x screen soft. Render at the screen's own
 // ratio (up to 3); the point and snow shaders size their sprites with the same number
+// A touch screen, or a narrow one (Navara's own test for a phone)
+const IS_PHONE = matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768
 const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 3)
 
 const route = useRoute()
@@ -121,9 +123,10 @@ onMounted(async () => {
     // multiplier still rises to 4 if the memory runs short
     lodFog: { enabled: true, density: 2e-4, sseFactor: 2 },
     memoryBudget: { sseMultiplierMin: 1, sseMultiplierMax: 4 },
-    // Tiles are refined until their error is under half a pixel (default 2): a zoom level deeper
-    // than 1, as the standard map's 256 px tiles are otherwise stretched on a high-density screen
-    maxSse: 0.5,
+    // Tiles are refined until their error is under this many pixels (default 2). On a desktop, half
+    // a pixel: a zoom level deeper, as the standard map's 256 px tiles are otherwise stretched on
+    // a high-density screen. A phone is sharp enough at 1, and has less to spare
+    maxSse: IS_PHONE ? 1 : 0.5,
   })
   view = v
   v.addPlugin(new DefaultPlugin())
