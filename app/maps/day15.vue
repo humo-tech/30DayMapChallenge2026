@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Day 15: Inside out — Alice's Harajuku. Day 10's pastel plush map of Overture Maps' PMTiles,
+// Day 15: Inside out — Harajuku through the looking-glass. Day 10's pastel plush map of Overture Maps' PMTiles,
 // now on Navara, and then it goes wrong: the whole page sways and wobbles, clocks melt in the
 // air, a looking-glass hangs over the corner, and the city has a twin hanging from the sky. The
 // camera falls up into it: the world turns over, and the twin stands on its feet while the real
@@ -109,12 +109,12 @@ const CLOCKS: Clock[] = [
 
 // Said in the looking-glass: written backwards
 const VERSES = [
-  '’Twas brillig, and the slithy toves did gyre and gimble in the wabe',
-  'Curiouser and curiouser!',
-  'It’s a poor sort of memory that only works backwards.',
-  'Why, sometimes I’ve believed as many as six impossible things before breakfast.',
-  'Which way? Which way?',
-  'Speak in French when you can’t think of the English for a thing',
+  'Something here is not quite right.',
+  'Which way is up?',
+  'The clocks run backwards, and fast.',
+  'The city hangs from the sky.',
+  'This is the other side.',
+  'Look again.',
 ]
 
 const container = ref<HTMLDivElement>()
