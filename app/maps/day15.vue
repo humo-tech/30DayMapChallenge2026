@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Day 15: Inside out — Harajuku through the looking-glass. Day 10's pastel plush map of Overture Maps' PMTiles,
-// now on Navara, and then it goes wrong: the whole page sways and wobbles, clocks melt in the
+// now on Navara, and then it goes wrong: the picture ripples like water (a post effect), clocks melt in the
 // air, a looking-glass hangs over the corner, and the city has a twin hanging from the sky. The
 // camera falls up into it: the world turns over, and the twin stands on its feet while the real
 // city hangs overhead
@@ -11,6 +11,7 @@
 import ThreeView, { Color, type Layer } from '@navaramap/three'
 import { DefaultPlugin, type DefaultDescriptions } from '@navaramap/three-default-plugin'
 import { PASTELS } from './lib/plushStyle'
+import { WarpEffectDesc, type WarpConfig } from './lib/WarpEffectDesc'
 import { MeltingClocksMeshDesc, type Clock, type MeltingClocksConfig } from './lib/MeltingClocksMeshDesc'
 
 const baseURL = useRuntimeConfig().app.baseURL
@@ -120,8 +121,6 @@ const VERSES = [
 const container = ref<HTMLDivElement>()
 const mirror = ref<HTMLCanvasElement>()
 const ripple = ref<SVGFETurbulenceElement>()
-const warpNoise = ref<SVGFETurbulenceElement>()
-const warpShift = ref<SVGFEDisplacementMapElement>()
 const touring = ref(true)
 const steady = ref(false)
 const flash = ref(false)
@@ -281,6 +280,11 @@ onMounted(async () => {
   }
   const clocks = v.addMesh<MeltingClocksMeshDesc>(clocksConfig)
 
+  // The picture itself rippling like water (a post effect: the page's panels stay as they are)
+  v.registerEffect('warp', WarpEffectDesc)
+  const warpConfig: WarpConfig = { warp: {} }
+  const warp = v.addEffect<WarpEffectDesc>(warpConfig)
+
   const page = container.value!.closest<HTMLElement>('.map-page')
   page?.classList.add('day15-page')
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -299,6 +303,9 @@ onMounted(async () => {
       v.setCamera(cameraAt(sample(tourTime)))
     }
     clocks.ref.tick(now)
+    // The harder the more the world is falling; calm on a phone, and off when steady
+    const calm = steady.value ? 0 : IS_PHONE ? 0.6 : 1
+    warp.ref.setWarp(calm, calm * falling(tourTime))
     // The page turns over with the world: its panels hang upside down while the camera is
     const roll = sample(tourTime).roll % 360
     const over = roll > 100 && roll < 260
@@ -308,9 +315,7 @@ onMounted(async () => {
     }
   })
 
-  // The page wobbles like the surface of a pond (an SVG displacement filter over everything,
-  // the panels too), the harder the more the world is falling; the looking-glass shows the map
-  // as it is now, reversed
+  // The looking-glass shows the map as it is now, reversed
   let frame = 0
   let last = 0
   const draw = (ms: number) => {
@@ -318,9 +323,6 @@ onMounted(async () => {
     if (ms - last < 45) return
     last = ms
     const t = ms / 1000
-    const hard = steady.value ? 0 : (IS_PHONE ? 14 : 26) + (IS_PHONE ? 30 : 60) * falling(tourTime)
-    warpShift.value?.setAttribute('scale', hard.toFixed(1))
-    warpNoise.value?.setAttribute('baseFrequency', `${(0.0042 + 0.0012 * Math.sin(t * 0.31)).toFixed(5)} ${(0.0068 + 0.0016 * Math.cos(t * 0.23)).toFixed(5)}`)
     ripple.value?.setAttribute('baseFrequency', `${(0.012 + 0.004 * Math.sin(t * 0.7)).toFixed(5)} ${(0.02 + 0.006 * Math.cos(t * 0.9)).toFixed(5)}`)
     const src = container.value?.querySelector('canvas')
     const dst = mirror.value
@@ -336,7 +338,6 @@ onMounted(async () => {
       ctx.restore()
     }
     verse.value = Math.floor(t / 9) % VERSES.length
-    page?.classList.toggle('day15-steady', steady.value)
   }
   frame = requestAnimationFrame(draw)
   stopFrames = () => {
@@ -383,11 +384,6 @@ onBeforeUnmount(() => {
     <div ref="container" class="map-canvas" />
 
     <svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
-      <!-- The page's wobble: every pixel pushed about by slowly drifting noise -->
-      <filter id="day15-warp" x="-6%" y="-6%" width="112%" height="112%" color-interpolation-filters="sRGB">
-        <feTurbulence ref="warpNoise" type="fractalNoise" baseFrequency="0.0042 0.0068" numOctaves="2" seed="7" result="noise" />
-        <feDisplacementMap ref="warpShift" in="SourceGraphic" in2="noise" scale="26" xChannelSelector="R" yChannelSelector="G" />
-      </filter>
       <!-- The looking-glass's surface, liquid -->
       <filter id="day15-ripple" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
         <feTurbulence ref="ripple" type="fractalNoise" baseFrequency="0.012 0.02" numOctaves="2" seed="3" result="noise" />
@@ -417,44 +413,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
-/* The whole page, the panels too, sways and wobbles (unscoped: the page is the parent's) */
-.map-page.day15-page {
-  filter: url(#day15-warp);
-  transform-origin: 50% 50%;
-  animation: day15-sway 17s ease-in-out infinite alternate;
-}
-
-.map-page.day15-page.day15-steady {
-  filter: none;
-  animation: none;
-}
-
-@keyframes day15-sway {
-  0% {
-    transform: scale(1.05) rotate(-0.7deg) skewX(-1deg);
-  }
-  50% {
-    transform: scale(1.06) rotate(0.5deg) skewX(0.8deg) skewY(0.6deg);
-  }
-  100% {
-    transform: scale(1.05) rotate(0.9deg) skewX(1.4deg) skewY(-0.5deg);
-  }
-}
-
-/* Clear of the edges the wobble and the sway push at */
-.map-page.day15-page .map-header {
-  top: 30px;
-  left: 30px;
-}
-
-@media (max-width: 600px) {
-  .map-page.day15-page .map-header {
-    top: 20px;
-    left: 20px;
-    max-width: calc(100vw - 40px);
-  }
-}
-
 /* With the world upside down, so are the panels */
 .map-page.day15-page .map-header,
 .map-page.day15-page .day15 .controls {
@@ -466,11 +424,6 @@ onBeforeUnmount(() => {
   transform: rotate(180deg);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .map-page.day15-page {
-    animation: none;
-  }
-}
 </style>
 
 <style scoped>
@@ -486,8 +439,8 @@ onBeforeUnmount(() => {
 
 .controls {
   position: absolute;
-  top: 30px;
-  right: 30px;
+  top: 12px;
+  right: 12px;
   z-index: 10;
   display: flex;
   gap: 8px;
@@ -625,8 +578,8 @@ onBeforeUnmount(() => {
 /* On a phone the header spans the top: the buttons go under it, the glass shrinks into the corner */
 @media (max-width: 600px) {
   .controls {
-    top: 84px;
-    right: 20px;
+    top: 64px;
+    right: 8px;
   }
 
   .chip {
