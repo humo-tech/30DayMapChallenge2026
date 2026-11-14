@@ -28,6 +28,7 @@ const M_LAT = 110_950
 const GROUND = '#c8ecbc'
 const SKY = '#ffe4ee'
 const STITCH = '#ffffff'
+const INK = '#6a4a8c'
 const hex = (s: string) => new Color().setStyle(s)
 
 // Land use as patchwork, as in Day 10
@@ -181,8 +182,10 @@ onMounted(async () => {
   await v.init()
   if (view !== v) return // unmounted while initializing
 
-  v.addLight({ ambient: { intensity: 2.2 } })
-  v.addLight({ sun: { intensity: 0.7 } })
+  // An afternoon sun, from the side, so the walls differ from the roofs
+  v.atmosphere.date = new Date('2026-11-14T06:10:00Z')
+  v.addLight({ ambient: { intensity: 1.9 } })
+  v.addLight({ sun: { intensity: 1.1 } })
   v.addLayer({ type: 'terrain', ellipsoid: {} })
   v.globe.color = hex(GROUND)
   v.setCamera(cameraAt(sample(Number(route.query.t) || 0)))
@@ -262,8 +265,29 @@ onMounted(async () => {
     })
     return layer
   }
+  // Piped in ink, as the roads are in pink: the roofs' edges, drawn as lines at the roofs' height
+  const piped = (hang: boolean) => {
+    const layer = v.addLayer({
+      type: 'vector',
+      source: city,
+      sourceLayers: ['building'],
+      polyline: { color: hex(INK), width: 1.2, geometryTypes: ['polygon'], clampToGround: false },
+    })
+    layer.on('featureUpdated', ({ evaluator }) => {
+      evaluator.evaluate(
+        ({ properties }) => {
+          const h = Number(properties?.['h'] ?? 8)
+          return { height: hang ? CEILING - h : h, color: hex(INK), width: 1.2 }
+        },
+        { filters: ['h'] },
+      )
+    })
+    return layer
+  }
   buildings(false)
   buildings(true)
+  piped(false)
+  piped(true)
 
   v.attribution?.add([
     {
