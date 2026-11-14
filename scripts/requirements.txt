@@ -4,3 +4,5 @@ numpy>=2.0
 eccodes>=2.40
 pyproj>=3.6
 Pillow>=10.0
+pmtiles>=3.5
+mapbox-vector-tile>=2.1
