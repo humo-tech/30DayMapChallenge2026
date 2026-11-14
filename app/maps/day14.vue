@@ -23,29 +23,29 @@ const GSI = 'https://cyberjapandata.gsi.go.jp/xyz'
 type Key = { t: number; bearing: number; dist: number; height: number; pitch: number }
 const KEYS: Key[] = [
   { t: 0, bearing: 180, dist: 1, height: 42000, pitch: -90 }, // the standard map, straight down
-  { t: 6, bearing: 180, dist: 1, height: 40000, pitch: -90 },
-  { t: 12, bearing: 182, dist: 400, height: 30000, pitch: -86 }, // the photo
-  { t: 22, bearing: 200, dist: 14000, height: 9500, pitch: -22 }, // the mountain risen
-  { t: 30, bearing: 215, dist: 3200, height: 5200, pitch: -28 },
-  { t: 37, bearing: 225, dist: 1100, height: 4300, pitch: -30 }, // over the crater
-  { t: 44, bearing: 235, dist: 420, height: 3830, pitch: -14 }, // over the rim
-  { t: 51, bearing: 240, dist: 110, height: 3600, pitch: 2 }, // down in the crater, ~25 m up
-  { t: 61, bearing: 270, dist: 60, height: 3572, pitch: 16 },
-  { t: 72, bearing: 320, dist: 40, height: 3562, pitch: 26 },
-  { t: 84, bearing: 370, dist: 30, height: 3558, pitch: 34 },
+  { t: 14, bearing: 180, dist: 1, height: 40000, pitch: -90 },
+  { t: 20, bearing: 182, dist: 400, height: 30000, pitch: -86 }, // the photo
+  { t: 30, bearing: 200, dist: 14000, height: 9500, pitch: -22 }, // the mountain risen
+  { t: 38, bearing: 215, dist: 3200, height: 5200, pitch: -28 },
+  { t: 45, bearing: 225, dist: 1100, height: 4300, pitch: -30 }, // over the crater
+  { t: 52, bearing: 235, dist: 420, height: 3830, pitch: -14 }, // over the rim
+  { t: 59, bearing: 240, dist: 110, height: 3600, pitch: 2 }, // down in the crater, ~25 m up
+  { t: 69, bearing: 270, dist: 60, height: 3572, pitch: 16 },
+  { t: 80, bearing: 320, dist: 40, height: 3562, pitch: 26 },
+  { t: 92, bearing: 370, dist: 30, height: 3558, pitch: 34 },
 ]
-const ROUND_S = 84
+const ROUND_S = 92
 // How fast the tour runs: the keyframes and phases are in s of tour, this many per s of the clock
 const SPEED = 2
 
 // Phases, in s into the round: [from, to]
-const PHOTO = [6, 11] // the standard map fades into the photo
-const RISE = [12, 21] // the terrain rises out of the flat map
-const ASSEMBLE = [25, 31] // the summit's photo comes in from the crater floor out
-const SINK = [33, 42] // the rest of the mountain sinks away, leaving the summit's ground
-const STORM = [42, 56] // the sky closes in and the snow starts
-const SETTLE = [47, 80] // snow settles on the ground
-const WHITEOUT = [79, 83] // the snow fills the view; the round starts again from white
+const PHOTO = [14, 19] // the standard map fades into the photo
+const RISE = [20, 29] // the terrain rises out of the flat map
+const ASSEMBLE = [33, 39] // the summit's photo comes in from the crater floor out
+const SINK = [41, 50] // the rest of the mountain sinks away, leaving the summit's ground
+const STORM = [50, 64] // the sky closes in and the snow starts
+const SETTLE = [55, 88] // snow settles on the ground
+const WHITEOUT = [87, 91] // the snow fills the view; the round starts again from white
 
 const SKY = {
   day: { horizon: new ThreeColor('#d4dde6'), zenith: new ThreeColor('#7fa5cf') },
@@ -236,7 +236,7 @@ onMounted(async () => {
     surface?.ref.setFront(front(phase(t, ASSEMBLE)), -1)
     surface?.ref.setSnow(phase(t, SETTLE), light)
     snowFar?.ref.tick(now / 1000, storm, light)
-    snowNear?.ref.tick(now / 1000, storm * phase(t, [44, 52]), light)
+    snowNear?.ref.tick(now / 1000, storm * phase(t, [52, 60]), light)
 
     horizon.lerpColors(SKY.day.horizon, SKY.storm.horizon, storm)
     zenith.lerpColors(SKY.day.zenith, SKY.storm.zenith, storm)
