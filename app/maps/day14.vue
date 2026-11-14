@@ -35,6 +35,8 @@ const KEYS: Key[] = [
   { t: 84, bearing: 370, dist: 30, height: 3558, pitch: 34 },
 ]
 const ROUND_S = 84
+// How fast the tour runs: the keyframes and phases are in s of tour, this many per s of the clock
+const SPEED = 2
 
 // Phases, in s into the round: [from, to]
 const PHOTO = [6, 11] // the standard map fades into the photo
@@ -206,7 +208,7 @@ onMounted(async () => {
   v.on('preUpdate', () => {
     const now = performance.now()
     if (clock !== undefined) {
-      tourTime = (now - clock) / 1000
+      tourTime = ((now - clock) / 1000) * SPEED
       v.setCamera(cameraAt(sample(tourTime)))
     }
     const t = ((tourTime % ROUND_S) + ROUND_S) % ROUND_S
@@ -262,12 +264,12 @@ onMounted(async () => {
     // Resume where the tour stopped: fly back there, then let the clock run
     const resumeAt = tourTime
     v.flyTo(cameraAt(sample(resumeAt)), { duration: 3000, easing: 'cubicInOut' }).then((ok) => {
-      if (ok && touring.value && view === v) clock = performance.now() - resumeAt * 1000
+      if (ok && touring.value && view === v) clock = performance.now() - (resumeAt / SPEED) * 1000
     })
   }
   // ?t=<s> starts the tour that far in, for tuning a phase without waiting for it
   const startAt = Number(route.query.t) || 0
-  clock = performance.now() - startAt * 1000
+  clock = performance.now() - (startAt / SPEED) * 1000
 })
 
 onBeforeUnmount(() => {
