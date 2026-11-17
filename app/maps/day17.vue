@@ -97,6 +97,9 @@ onMounted(async () => {
     backgroundColor: new Color().setStyle(SKY),
     animation: true,
     shadow: true,
+    // Each tile's mesh in this many strips a side (Navara's default, 10, leaves the globe seen from
+    // afar visibly polygonal at its edge, and the sea's lit normals faceted)
+    segments: 40,
     pixelRatio: PIXEL_RATIO,
     lodFog: { enabled: true, density: 2e-4, sseFactor: 2 },
     memoryBudget: { sseMultiplierMin: 1, sseMultiplierMax: 4 },
