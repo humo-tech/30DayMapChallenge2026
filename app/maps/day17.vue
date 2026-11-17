@@ -19,6 +19,11 @@ const LAND = [0.86, 0.84, 0.8, 1]
 // Mt. Fuji at the lower left, the Kanto plain and Tokyo Bay opening to the right, seen from the south
 const CAMERA = { lng: 139.3, lat: 33.8, height: 150_000, heading: 350, pitch: -40, roll: 0 }
 
+// A tall screen (a phone held upright) sees less sideways: go higher, tilt more, and look up the
+// Fuji-to-Tokyo-Bay side so the plain fills the height
+const PORTRAIT = window.innerHeight > window.innerWidth
+if (PORTRAIT) Object.assign(CAMERA, { lng: 138.57, lat: 34.03, height: 200_000, heading: 20, pitch: -50 })
+
 // ?cam=lng,lat,height,heading,pitch  ?d=YYYY-MM-DD  ?t=minutes, for tuning a view or a moment
 const query = useRoute().query
 const camQuery = String(query.cam ?? '').split(',').map(Number)
@@ -26,6 +31,11 @@ if (camQuery.length === 5 && camQuery.every(Number.isFinite)) {
   const [lng, lat, height, heading, pitch] = camQuery as [number, number, number, number, number]
   Object.assign(CAMERA, { lng, lat, height, heading, pitch })
 }
+
+// A phone gets coarser tiles and a pixel ratio capped at 2 by default; this map is all fine relief,
+// so ask for the screen's own ratio (up to 3) and the desktop's level of detail (as Day 14 does)
+const IS_PHONE = matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768
+const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 3)
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const jstNow = new Date(Date.now() + JST * 3600_000)
@@ -54,9 +64,9 @@ const track = computed(() => {
 // Calendar shortcuts: the days the sun's path turns
 const YEAR = jstNow.getUTCFullYear()
 const SHORTCUTS = [
-  { label: 'Winter solstice', date: `${YEAR}-12-22` },
-  { label: 'Equinox', date: `${YEAR}-03-21` },
-  { label: 'Summer solstice', date: `${YEAR}-06-21` },
+  { label: 'Winter', title: 'Winter solstice', date: `${YEAR}-12-22` },
+  { label: 'Equinox', title: 'Spring equinox', date: `${YEAR}-03-21` },
+  { label: 'Summer', title: 'Summer solstice', date: `${YEAR}-06-21` },
 ]
 
 // The sun and its shadows follow the clock
@@ -87,6 +97,11 @@ onMounted(async () => {
     backgroundColor: new Color().setStyle(SKY),
     animation: true,
     shadow: true,
+    pixelRatio: PIXEL_RATIO,
+    lodFog: { enabled: true, density: 2e-4, sseFactor: 2 },
+    memoryBudget: { sseMultiplierMin: 1, sseMultiplierMax: 4 },
+    // Tiles are refined until their error is under this many device pixels: a phone keeps it at 1
+    maxSse: IS_PHONE ? 1 : 0.5 * PIXEL_RATIO,
   })
   view = v
   v.addPlugin(new DefaultPlugin())
@@ -103,7 +118,7 @@ onMounted(async () => {
     url: MAPTERHORN,
     elevationDecoder: TERRARIUM_ELEVATION_DECODER(),
     tileSize: 512,
-    maxZoom: 12,
+    maxZoom: 13,
   })
   v.addLayer({ type: 'terrain', source: dem, terrain: { castShadow: true, receiveShadow: true } })
   // Terrain and raster tiles are unlit on their own; the DEM's hillshade gives them normals, so the
@@ -137,7 +152,7 @@ onBeforeUnmount(() => {
     <div class="panel">
       <div class="row">
         <input v-model="date" type="date" class="date" aria-label="Date" />
-        <button v-for="s in SHORTCUTS" :key="s.date" type="button" class="chip" :aria-pressed="date === s.date" @click="date = s.date">
+        <button v-for="s in SHORTCUTS" :key="s.date" type="button" class="chip" :title="s.title" :aria-pressed="date === s.date" @click="date = s.date">
           {{ s.label }}
         </button>
       </div>
