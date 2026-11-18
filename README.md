@@ -64,6 +64,7 @@ scripts/.venv/bin/python scripts/day01/extract_tottori.py   # --release 2026-10-
 | `scripts/day16/extract_course.py <gpx>` | The Kobe Marathon's course from my watch's GPS track (Garmin Connect GPX), its shape only (no times, heart rate or elevation), simplified → `public/data/day16/course.json`; the GPX stays out of the repository |
 | `scripts/day16/scatter_homes.py` | Where the runners might come from (an impression): homes scattered around the towns in `scripts/day16/hometowns.json`, redrawn until on land (Day 1's `land.geojson`) → `public/data/day16/homes.json` |
 | `scripts/day16/prepare_photo.py <photo> <name> --blur x,y,w,h` | A photo from the race with bib names and faces blurred, shrunk to 900 px, saved without metadata → `public/data/day16/photos/<name>.jpg`; the original stays out of the repository |
+| `scripts/day18/null_fuji.py` | Mt. Fuji cut out of GSI's DEM inside an outline of its foot and the hole filled from its edge (the ground as if it had never been there), the mountain's own heights and aerial photo, and the Tokaido Shinkansen's westbound track past it from Overture Maps → `public/data/day18/fuji.json`, `fuji_null.bin`, `fuji_heights.bin`, `fuji_ortho.jpg` |
 
 ## Deployment (GitHub Pages)
 
