@@ -3,7 +3,10 @@
 // Fuji, on GSI's DEM and aerial photo. Partway along, the mountain's elevations go null and it is
 // gone: the same ride on, past the Fuji River, as if there had never been a mountain there.
 // The terrain under it is already Fuji-less (lib/nullDem.ts); the mountain is a mesh of its own
-// over it (lib/FujiMountainMeshDesc.ts), so it can go in a moment
+// over it (lib/FujiMountainMeshDesc.ts), so it can go in a moment.
+// Seen through the car's window: a frame round the view, and on the glass a film of dust, greasy
+// smudges that blur what is behind them, and the cabin's light reflected faintly in it (CSS only,
+// laid over the canvas; ?clean=1 takes it all off)
 import ThreeView, { Color, JAPAN_GSI_ELEVATION_DECODER } from '@navaramap/three'
 import { DefaultPlugin, type DefaultDescriptions } from '@navaramap/three-default-plugin'
 import { Color as ThreeColor, TextureLoader } from 'three'
@@ -111,6 +114,8 @@ for (let ty = Math.floor(mapY0 / 256); ty <= Math.floor(mapY1 / 256); ty++) {
 const summitOnMap = onMap(SUMMIT.lng, SUMMIT.lat)
 
 const route = useRoute()
+// ?clean=1: the view with no window round it
+const clean = computed(() => route.query.clean === '1')
 const container = ref<HTMLDivElement>()
 const dark = ref(1)
 const linePath = ref('')
@@ -257,9 +262,30 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="map-canvas day18">
+  <div class="map-canvas day18" :class="{ clean }">
     <div ref="container" class="map-canvas" />
     <div class="dark" :style="{ opacity: dark }" />
+    <template v-if="!clean">
+      <!-- The glass: what is on it, and what shows in it -->
+      <div class="glass" aria-hidden="true">
+        <div class="tint" />
+        <div class="haze-film" />
+        <div class="fog" :style="{ opacity: 1 - dark * 0.7 }" />
+        <div class="rim-blur" />
+        <div class="dust" :style="{ opacity: 0.22 * (1 - dark * 0.8) }" />
+        <div class="specks" />
+        <div class="streaks" />
+        <div class="reflection" :style="{ opacity: 0.3 + dark * 0.6 }" />
+      </div>
+      <!-- The frame, and the cabin wall round it -->
+      <div class="frame" aria-hidden="true" />
+      <div class="cabin" aria-hidden="true" />
+      <div class="credit">
+        <a href="https://maps.gsi.go.jp/development/ichiran.html">出典：国土地理院</a>
+        · Track: © <a href="https://overturemaps.org/">Overture Maps Foundation</a>
+        · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
+      </div>
+    </template>
     <svg class="minimap" :viewBox="`0 0 ${mapSize.w} ${mapSize.h}`" aria-label="Where the train is, on the Tokaido Shinkansen">
       <image v-for="t in mapTiles" :key="t.href" :href="t.href" :x="t.x" :y="t.y" width="256" height="256" />
       <path :d="wedge" class="view" />
@@ -278,6 +304,17 @@ onBeforeUnmount(() => {
 <style scoped>
 .day18 {
   position: relative;
+  overflow: hidden;
+  /* The window's hole in the wall, from each edge; its corners; the frame's width */
+  --wt: clamp(8px, 5vh, 56px);
+  --wb: clamp(26px, 8vh, 80px);
+  --wx: clamp(8px, 4.5vw, 84px);
+  --radius: clamp(18px, 7vmin, 72px);
+  --ring: clamp(6px, 1.5vmin, 16px);
+  /* Smudges: a low, blotchy noise that is clear in places, thick in others (used as a mask too) */
+  --smudge: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Cfilter id='f' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.01' numOctaves='4' seed='11'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 3.2 -1.35'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+  /* Dust: fine specks */
+  --specks: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='f' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.98 0 0 0 0 0.92 0 0 0 9 -6.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
 }
 
 .dark {
@@ -288,11 +325,141 @@ onBeforeUnmount(() => {
   background: #000;
 }
 
+/* ===== The window ===== */
+.glass,
+.frame {
+  position: absolute;
+  inset: var(--wt) var(--wx) var(--wb);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+.glass {
+  z-index: 6;
+  overflow: hidden;
+}
+
+.glass > div {
+  position: absolute;
+  inset: 0;
+}
+
+/* The tinted pane: a touch of smoke, so the day is less than quite clear */
+.tint {
+  background: rgba(46, 42, 34, 0.1);
+}
+
+/* A film over all of it: the sky and the far ground go a little milky, most of all near the frame */
+.haze-film {
+  background: radial-gradient(ellipse at 50% 45%, rgba(236, 238, 236, 0) 35%, rgba(226, 228, 224, 0.28) 100%);
+}
+
+/* Greasy patches that blur what is behind them: the same noise is the mask and the white film */
+.fog {
+  backdrop-filter: blur(4px) brightness(1.04);
+  -webkit-backdrop-filter: blur(4px) brightness(1.04);
+  mask-image: var(--smudge);
+  -webkit-mask-image: var(--smudge);
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+}
+
+/* Everywhere a little soft, and at the edge, where the glass is dirtiest and the pane curves, more so */
+.rim-blur {
+  backdrop-filter: blur(0.8px);
+  -webkit-backdrop-filter: blur(0.8px);
+}
+
+.rim-blur::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(3.5px);
+  -webkit-backdrop-filter: blur(3.5px);
+  mask-image: radial-gradient(ellipse at 50% 50%, transparent 55%, #000 100%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 50%, transparent 55%, #000 100%);
+}
+
+/* The dust itself, as a pale veil in the same patches, thicker toward the edge */
+.dust {
+  background: var(--smudge) 0 0 / 100% 100%;
+  opacity: 0.22;
+  mix-blend-mode: screen;
+  mask-image: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0.45) 20%, #000 100%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0.45) 20%, #000 100%);
+}
+
+.specks {
+  background: var(--specks) 0 0 / 300px 300px;
+  opacity: 0.3;
+}
+
+/* Streaks the wind has drawn in the dirt, running back along the car, a little uphill */
+.streaks {
+  background: repeating-linear-gradient(
+    93deg,
+    transparent 0 41px,
+    rgba(255, 255, 255, 0.06) 42px 43px,
+    transparent 44px 97px,
+    rgba(255, 255, 255, 0.035) 98px 101px,
+    transparent 102px 173px
+  );
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 45%, #000 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 45%, #000 100%);
+}
+
+/* The cabin in the glass: two pale bands, and in the tunnel (see the template) they show */
+.reflection {
+  background:
+    linear-gradient(112deg, transparent 18%, rgba(255, 255, 255, 0.16) 29%, transparent 38%),
+    linear-gradient(112deg, transparent 52%, rgba(255, 255, 255, 0.09) 58%, transparent 66%),
+    radial-gradient(ellipse at 18% 88%, rgba(255, 244, 220, 0.18), transparent 45%);
+  mix-blend-mode: screen;
+}
+
+/* The frame: a dark ring, a highlight on its edge, then the cabin wall out to the screen's edge.
+   Inside, the glass is shaded where it runs into the frame */
+.frame {
+  z-index: 7;
+  box-shadow:
+    inset 0 0 0 2px rgba(0, 0, 0, 0.7),
+    inset 0 0 28px 6px rgba(0, 0, 0, 0.5),
+    0 0 0 var(--ring) #2a2c30,
+    0 0 0 calc(var(--ring) + 2px) rgba(255, 255, 255, 0.16),
+    0 0 0 calc(var(--ring) + 6px) #3a3d42,
+    0 0 0 calc(var(--ring) + 8px) rgba(0, 0, 0, 0.45),
+    0 0 0 100vmax #cdc8bb;
+}
+
+/* The cabin's own light falling off toward the corners: over the wall and, lightly, the view */
+.cabin {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(30, 26, 20, 0.28) 100%);
+}
+
+.credit {
+  position: absolute;
+  left: calc(var(--wx) + 6px);
+  bottom: 5px;
+  z-index: 11;
+  max-width: calc(100% - 2 * var(--wx));
+  font-size: 10px;
+  line-height: 1.3;
+  color: #6c675b;
+}
+
+.credit a {
+  text-decoration: underline;
+}
+
 /* Clear of the attribution button in the corner */
 .minimap {
   position: absolute;
-  right: 12px;
-  bottom: 44px;
+  right: calc(var(--wx) + 12px);
+  bottom: calc(var(--wb) + 12px);
   z-index: 10;
   width: 200px;
   height: auto;
