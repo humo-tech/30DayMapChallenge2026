@@ -87,10 +87,10 @@ onMounted(async () => {
     return s
   }
 
-  const bloom = v.addEffect({ selectiveBloom: { strength: 1.0, radius: 0.6, threshold: 0.2 } })
+  const bloom = v.addEffect({ selectiveBloom: { strength: 0.5, radius: 0.4, threshold: 0.5 } })
   const hexConfig: HexPrismsConfig = {
     effectIds: [bloom.id],
-    hexPrisms: { anchor: { lng: 137.5, lat: 36 }, fill: 0.9, height: 6, glow: 0.7, sparkle: 1, duration: 800 },
+    hexPrisms: { anchor: { lng: 137.5, lat: 36 }, fill: 0.9, height: 6, glow: 0.3, sparkle: 0.5, duration: 800 },
   }
   const hex = v.addMesh<HexPrismsMeshDesc>(hexConfig)
 
