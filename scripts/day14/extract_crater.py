@@ -3,8 +3,8 @@
 Reads the survey's 500-level map sheets round the crater (400 m x 300 m each, JGD2011 plane
 zone VIII), from the open data bucket s3://virtual-shizuoka:
 
-- Grid: the 0.5 m DEM. Built into the surface the aerial photo is draped on, and the slopes
-  the points' facing comes from.
+- Grid: the 0.5 m DEM. Built into the surface the aerial photo is draped on, and the ground's
+  normals the points are shaded by.
 - Ortho: the 20 cm aerial photos the points were colored from, mosaicked into one texture,
   and the shadows the points' colors are lifted out of.
 - Ground: the laser points (LAS 1.2, RGB per point, ~97 points/m2), all of them, into a
@@ -41,7 +41,9 @@ Outputs (public/data/day14/):
         header, 32 bytes: float32 min x, y, z, max x, y, z (m); uint32 count;
                           uint8 children (bits: NW, NE, SW, SE); 3 spare bytes
         per point, 12 bytes: uint16 x, y, z (0-65535 across the bounds);
-                             uint8 r, g, b, up (255 = flat), lift (0-255: x1-x3), spare
+                             uint8 r, g, b, up (the normal's up: 255 = flat),
+                             lift (0-255: x1-x3), aspect (the normal's heading, from west
+                             towards north: 0-255 round the circle)
 
 Usage:
     python scripts/day14/extract_crater.py
@@ -163,14 +165,19 @@ def build_dem() -> np.ndarray:
     return z
 
 
-def facing_up(dem: np.ndarray) -> np.ndarray:
-    """How much the ground faces up (cos of its slope), over 2 m, on the DEM's grid."""
-    k = 4  # 2 m blocks
-    h, w = dem.shape
-    coarse = dem[: h // k * k, : w // k * k].reshape(h // k, k, w // k, k).mean((1, 3))
-    gy, gx = np.gradient(coarse, DEM_STEP * k)
-    up = 1 / np.sqrt(1 + gx**2 + gy**2)
-    return np.repeat(np.repeat(up, k, 0), k, 1)
+def ground_normals(dem: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    The ground's normals over ~1 m, on the DEM's grid: how much they face up (the cos of the
+    slope), and their aspect (radians from west towards north).
+    """
+    z = dem.astype(float)
+    for _ in range(2):  # 3 x 3 box blur, twice
+        z = sum(np.roll(np.roll(z, a, 0), b, 1) for a in (-1, 0, 1) for b in (-1, 0, 1)) / 9
+    # Rows run south: d(height)/d(row) is minus the northward slope
+    gy, gx = np.gradient(z, DEM_STEP)
+    n = np.sqrt(1 + gx**2 + gy**2)
+    # In West-Up-North: (dz/dEast, 1, -dz/dNorth) / n
+    return (1 / n).astype(np.float32), np.arctan2(gy, gx).astype(np.float32)
 
 
 def grid_index(x, y, step: float, shape):
@@ -226,15 +233,15 @@ def read_las(sheet: str):
     return xyz, rgb
 
 
-# A point while it's sorted into the tree: crater frame (m), color, facing, lift
-STAGED = np.dtype([("p", "<f4", 3), ("c", "u1", 4), ("lift", "u1")])
+# A point while it's sorted into the tree: crater frame (m), color and facing up, lift, aspect
+STAGED = np.dtype([("p", "<f4", 3), ("c", "u1", 4), ("lift", "u1"), ("aspect", "u1")])
 
 
 def node_size(level: int) -> float:
     return ROOT_SIZE / 2**level
 
 
-def stage_points(frame: Frame, up: np.ndarray, lift: np.ndarray, staging: Path, seed: int) -> tuple[int, float]:
+def stage_points(frame: Frame, up: np.ndarray, aspect: np.ndarray, lift: np.ndarray, staging: Path, seed: int) -> tuple[int, float]:
     """Sorts every sheet's points into their level and node, appended to staging files."""
     rng = np.random.default_rng(seed)
     shares = np.array(SHARES)
@@ -242,7 +249,8 @@ def stage_points(frame: Frame, up: np.ndarray, lift: np.ndarray, staging: Path, 
     for sheet in sheets():
         xyz, rgb = read_las(sheet)
         total += len(xyz)
-        facing = up[grid_index(xyz[:, 0], xyz[:, 1], DEM_STEP, up.shape)]
+        cell = grid_index(xyz[:, 0], xyz[:, 1], DEM_STEP, up.shape)
+        facing, heading = up[cell], aspect[cell]
         tilt = 1 / np.clip(facing, 1 / MAX_TILT_KEEP, 1)
         # The first level whose (tilted) share the point's draw falls under
         r = rng.random(len(xyz))
@@ -252,12 +260,13 @@ def stage_points(frame: Frame, up: np.ndarray, lift: np.ndarray, staging: Path, 
         rim = np.hypot(xyz[:, 0] - CRATER[0], xyz[:, 1] - CRATER[1]) > RIM_R
         level[rim & (level > MAX_LEVEL_OUT)] = LEVELS  # past the rim, not that deep
         keep = level < LEVELS
-        xyz, rgb, level, facing = xyz[keep], rgb[keep], level[keep], facing[keep]
+        xyz, rgb, level, facing, heading = xyz[keep], rgb[keep], level[keep], facing[keep], heading[keep]
 
         staged = np.zeros(len(xyz), dtype=STAGED)
         staged["p"] = frame(xyz[:, 0], xyz[:, 1], xyz[:, 2])
         staged["c"][:, :3] = rgb
         staged["c"][:, 3] = np.round(facing * 255)
+        staged["aspect"] = np.round(heading / (2 * np.pi) * 256).astype(int) % 256
         staged["lift"] = np.round((lift[grid_index(xyz[:, 0], xyz[:, 1], LIFT_CELL, lift.shape)] - 1) / (MAX_LIFT - 1) * 255)
         for lv in range(LEVELS):
             m = level == lv
@@ -291,10 +300,11 @@ def write_tiles(staging: Path, out: Path) -> dict:
             for bit, (dr, dc) in enumerate(((0, 0), (0, 1), (1, 0), (1, 1))):
                 if (staging / str(lv + 1) / f"{row * 2 + dr}-{col * 2 + dc}.bin").exists():
                     children |= 1 << bit
-            recs = np.zeros(len(pts), dtype=[("p", "<u2", 3), ("c", "u1", 4), ("lift", "u1"), ("pad", "u1")])
+            recs = np.zeros(len(pts), dtype=[("p", "<u2", 3), ("c", "u1", 4), ("lift", "u1"), ("aspect", "u1")])
             recs["p"] = np.round((pts["p"] - lo) / span * 65535)
             recs["c"] = pts["c"]
             recs["lift"] = pts["lift"]
+            recs["aspect"] = pts["aspect"]
             dest = out / str(lv) / path.name
             dest.parent.mkdir(parents=True, exist_ok=True)
             with open(dest, "wb") as f:
@@ -314,7 +324,7 @@ def main() -> None:
 
     print("DEM")
     dem = build_dem()
-    up = facing_up(dem)
+    up, aspect = ground_normals(dem)
     ci = round((Y1 - CRATER[1]) / DEM_STEP)
     cj = round((CRATER[0] - X0) / DEM_STEP)
     floor = float(dem[ci - 40 : ci + 40, cj - 40 : cj + 40].min())
@@ -339,7 +349,7 @@ def main() -> None:
     print("points")
     staging = CACHE / "staging"
     shutil.rmtree(staging, ignore_errors=True)
-    total, density = stage_points(frame, up, lift, staging, args.seed)
+    total, density = stage_points(frame, up, aspect, lift, staging, args.seed)
     tiles = OUT / "tiles"
     shutil.rmtree(tiles, ignore_errors=True)
     stats = write_tiles(staging, tiles)
