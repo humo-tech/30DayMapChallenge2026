@@ -58,10 +58,11 @@ const DEFAULTS = {
 }
 
 /** Cells with a value under this get no pool of light */
-const GLOW_MIN = 0.3
+export const GLOW_MIN = 0.3
 
-// Shared GLSL: easing, staggering, and the color ramp (indigo -> blue -> cyan -> magenta -> gold -> white)
-const common = /* glsl */ `
+// Shared GLSL: easing, staggering, and the color ramp (indigo -> blue -> cyan -> magenta -> gold -> white).
+// The GLSL here is also used by the MapLibre version (hexPrismsLayer.ts), which brings its own vertex shaders
+export const common = /* glsl */ `
   float easeOutBack(float t) { float u = t - 1.0; return 1.0 + 2.4 * u * u * u + 1.4 * u * u; }
   float easeInCubic(float t) { return t * t * t; }
   // 0 -> 1 as p goes 0 -> 1, but each item starts late by up to s of the run (d in 0-1 is its place in the queue)
@@ -136,7 +137,7 @@ const prismVertexShader = /* glsl */ `
 `
 
 // setupMaterialForMRT appends the G-buffer writes before main()'s closing brace, so keep main() last
-const prismFragmentShader = /* glsl */ `
+export const prismFragmentShader = /* glsl */ `
   ${common}
   uniform float uTime;
   uniform float uSparkle;
@@ -219,7 +220,7 @@ const glowVertexShader = /* glsl */ `
   }
 `
 
-const glowFragmentShader = /* glsl */ `
+export const glowFragmentShader = /* glsl */ `
   uniform float uGlow;
   uniform float uTime;
   uniform float uExtrude;
