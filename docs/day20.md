@@ -8,6 +8,8 @@
 | `app/maps/day20.vue` | ページ本体。ズームから解像度を決める、2D/3D の切り替え、冒頭のカメラ |
 | `app/maps/lib/h3Cells.ts` | ステーション → H3 セルの集計、解像度の選択 |
 | `app/maps/lib/HexPrismsMeshDesc.ts` | 六角柱と足元の光を描く自作の Navara 部品 |
+| `app/maps/day20-maplibre.vue` / `app/pages/day/20-maplibre.vue` | MapLibre GL JS 版のページ（隠しページ `/day/20-maplibre`、§7） |
+| `app/maps/lib/hexPrismsLayer.ts` | MapLibre 版の六角柱（カスタムレイヤー） |
 
 ## 1. H3 の使い方（`h3Cells.ts`）
 
@@ -117,3 +119,41 @@ GeoJSON にして Navara のレイヤーで押し出す（extrude）のではな
 | `duration` | 800 ms | 解像度が変わるときの湧く・消える時間 |
 
 `day20.vue`: `EDGE_PX`（セルの画面上の大きさ）、`selectiveBloom`（`strength` 0.5 / `radius` 0.4 / `threshold` 0.5）、`TILT_3D`、`MODE_MS`。
+
+## 7. MapLibre GL JS 版：`/day/20-maplibre`
+
+同じ六角柱を MapLibre GL JS の上で描く隠しページ（Day 12 の MapLibre 版と同じく、どこからもリンクしておらず `noindex`）。投影はメルカトルだけ。H3 の集計（`h3Cells.ts`）と、六角柱・足元の光のフラグメントシェーダーは Navara 版と同じもの（`HexPrismsMeshDesc.ts` から export）を使う。
+
+| | Navara 版 | MapLibre 版 |
+|---|---|---|
+| 描く仕組み | 自作の `MeshDesc` | カスタムレイヤー。地図の GL コンテキストの上に three.js の `WebGLRenderer` を作る（Day 10・12 と同じ） |
+| 座標 | ECEF、アンカーからの差分 | Web メルカトル、アンカーからの差分（アンカーの緯度でのメートル、x 東・y 北・z 上） |
+| 柱の「上」 | 地球の中心から外向き | z 軸 |
+| ズーム → 解像度 | カメラの高さと俯角から | `map.getZoom()`（画面中心のズームなので俯角の補正は要らない） |
+| 毎フレームの更新 | `preUpdate` | カスタムレイヤーの `prerender`（`beforeFrame`） |
+| ブルーム | Navara の `selectiveBloom` | 自作（下） |
+| 2D / 3D | 見ている点を求めて `flyTo` | `easeTo` で `pitch` と `bearing` だけ変える（MapLibre は画面中心を軸に回る） |
+| 縁の光 / 星 | あり | なし |
+
+### メルカトルでの大きさ
+
+メルカトルは北へ行くほど 1 m を `1 / cos(緯度)` 倍に大きく描く。セルの輪郭は投影した座標なので自然にそうなるが、高さと足元の光の大きさはメートルで決めているので、そのままでは北のセルほど平たくなる。そこで、セルごとに「アンカーに対する倍率」`cos(アンカーの緯度) / cos(セルの緯度)` を頂点属性（`aVS.z`）に入れ、辺の長さに掛けてから使う。
+
+### ビュー空間を取り出す
+
+フラグメントシェーダーはビュー空間（カメラから見た座標）で陰影をつける（`vPosV`、`dFdx` の法線、固定の光の向き）。MapLibre の `defaultProjectionData.mainMatrix` は「メルカトル → 画面」をまとめた行列なので、`render()` に一緒に渡される `projectionMatrix`（透視投影だけ）の逆行列を掛けてビュー行列を取り出す。MapLibre のビュー空間は y が下向きなので、`scale(1, -1, 1)` を投影の側へ移して、three.js のカメラには y が上向きのビュー行列を渡す。こうすると `modelViewMatrix` / `projectionMatrix` がそのまま使え、Navara 版のフラグメントシェーダーが手直しなしで動く。
+
+### ブルーム
+
+MapLibre にはブルームがないので、レイヤーの中で作る。
+
+1. 六角柱と足元の光を、画面と同じ大きさのオフスクリーン（HalfFloat、MSAA 4×）に透明な背景で描く。柱は不透明（アルファ 1）、足元の光は色だけ足してアルファは足さない（`CustomBlending`）。
+2. 明るい部分（輝度がしきい値 0.5 以上）を半分の大きさに抜き出し、13 タップで 6 段まで縮め、テントフィルターで戻しながら各段と `radius`（0.4）で混ぜる。postprocessing ライブラリの `MipmapBlurPass` と同じ作り（Navara の `selectiveBloom` はこれを使っている）。
+3. 柱とブルーム（`strength` 0.5 倍）を足し、`linearToOutputTexel()` で sRGB にして、乗算済みアルファで地図の上に重ねる。柱のないところは地図が透けて、光だけが乗る。
+
+地図の上で明るいのは六角柱だけなので、全体にかけても Navara の「選択」ブルームと同じ結果になる。
+
+### セルの大きさとカメラ
+
+- Navara 版の `EDGE_PX` は 22 だが、スクリーンショットで比べると、Navara 版のセルは画面上でその 2 倍くらいに出ている（Navara のズームから出す m/px が小さめに出ているらしい）。MapLibre の `getZoom()` から出す m/px は画面どおりなので、見た目を揃えて `EDGE_PX = 44` にした。
+- 俯角は MapLibre の `pitch`（真下から測る）に直す。Navara の −52°（水平から下へ）は 38°。日本全体はズーム 4.4、東京はズーム 12.5（高さ 900 px くらいの窓で Navara 版とほぼ同じ範囲）。
