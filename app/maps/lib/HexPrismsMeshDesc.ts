@@ -181,6 +181,7 @@ const prismFragmentShader = /* glsl */ `
     c += hue * fres * 0.8;
     // Twinkle, mostly on the bright cells; a flash of near white
     c += vec3(1.0, 0.96, 0.88) * tw * (0.25 + 1.4 * value);
+    c *= 0.7; // keep the tall cells from clipping to white
     gl_FragColor = vec4(c, 1.0);
   }
 `
