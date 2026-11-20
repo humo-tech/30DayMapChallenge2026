@@ -29,6 +29,18 @@ pnpm generate   # static site output (.output/public)
 
 All 30 day pages are prerendered up front. Days without an `app/maps/dayXX.vue` show a "Coming soon" page.
 
+### Thumbnails
+
+The home page shows a thumbnail per day. Drop an image at `app/assets/thumbs/dayXX.jpg` (or `.webp` / `.png`, 16:10 recommended) and it appears on the card; days without one show a placeholder with the day number.
+
+`scripts/capture_thumbs.mjs` captures every published map with Playwright (uses the preinstalled one if the project has none). `pnpm dev` can fail on the Navara wasm import, so use the static build:
+
+```bash
+pnpm generate
+python3 -m http.server -d .output/public 4173 &
+node scripts/capture_thumbs.mjs [day ...] --base http://localhost:4173
+```
+
 ### Adding map libraries
 
 Install what each day needs:
