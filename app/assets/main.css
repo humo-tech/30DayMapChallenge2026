@@ -121,6 +121,13 @@ a {
   color: var(--soon-border);
 }
 
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .card-head {
   display: flex;
   justify-content: space-between;
@@ -169,6 +176,48 @@ a {
 .badge.soon {
   color: var(--soon-fg);
   border-color: var(--soon-border);
+}
+
+/* On a phone each card becomes a row: square thumbnail on the left, text on the right */
+@media (max-width: 600px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .card {
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+    padding: 10px;
+  }
+
+  .card-thumb {
+    flex: none;
+    width: 88px;
+    aspect-ratio: 1;
+    margin: 0;
+    border-radius: 8px;
+  }
+
+  .card-thumb-day {
+    font-size: 28px;
+  }
+
+  .card-body {
+    flex: 1;
+    gap: 6px;
+  }
+
+  .card-head {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    justify-content: flex-start;
+  }
+
+  .card-title {
+    font-size: 18px;
+  }
 }
 
 /* ===== Day page ===== */
