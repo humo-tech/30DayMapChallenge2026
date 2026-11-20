@@ -29,6 +29,12 @@ pnpm generate   # static site output (.output/public)
 
 All 30 day pages are prerendered up front. Days without an `app/maps/dayXX.vue` show a "Coming soon" page.
 
+### Thumbnails
+
+The home page shows a thumbnail per day. Drop an image at `app/assets/thumbs/dayXX.jpg` (or `.webp` / `.png`, 16:10 recommended) and it appears on the card; days without one show a placeholder with the day number.
+
+`scripts/capture_thumbs.mjs` can take screenshots of the running maps with Playwright (`pnpm dev`, then `node scripts/capture_thumbs.mjs [day ...]`).
+
 ### Adding map libraries
 
 Install what each day needs:
