@@ -37,11 +37,13 @@ const doneCount = items.filter((i) => i.done).length
             <img v-if="item.thumb" :src="item.thumb" :alt="`Day ${item.day}: ${item.title}`" loading="lazy" decoding="async" />
             <span v-else class="card-thumb-day">{{ item.day }}</span>
           </div>
+          <div class="card-body">
           <div class="card-head">
             <span>Day {{ item.day }} · {{ formatDisplayDate(item.day) }}</span>
             <span class="badge" :class="item.done ? 'done' : 'soon'">{{ item.done ? 'Published' : 'Coming soon' }}</span>
           </div>
           <div class="card-title">{{ item.title }}</div>
+          </div>
         </NuxtLink>
       </li>
     </ul>
