@@ -74,6 +74,9 @@ const raster = ref<Raster>()
 const landOnly = ref(true)
 const rasterUrl = ref<string>()
 const warping = ref(false)
+// On a phone the controls fold away (with Align mode's toolbar) behind one button
+const controlsOpen = ref(true)
+const alignBar = ref(0) // Align mode's toolbar height, to keep the controls above it on a phone
 const toggleRaster = (r: Raster) => (raster.value = raster.value === r ? undefined : r)
 const loaded = shallowRef<Loaded>()
 const loading = ref(true)
@@ -303,7 +306,7 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
 
 <template>
   <div class="map-canvas day22">
-    <AlignPanel v-if="mode === 'align'" />
+    <AlignPanel v-if="mode === 'align'" :folded="!controlsOpen" @bar-height="alignBar = $event" />
     <div
       v-show="mode !== 'align'"
       ref="container"
@@ -418,7 +421,11 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
       />
     </div>
 
-    <div class="controls">
+    <div
+      class="controls"
+      :class="{ folded: !controlsOpen, 'over-bar': mode === 'align' }"
+      :style="{ '--align-bar': `${alignBar}px` }"
+    >
       <div class="seg" role="group" aria-label="Map">
         <button type="button" :aria-pressed="mode === 'japan'" @click="mode = 'japan'">Japan</button>
         <button type="button" :aria-pressed="mode === 'world'" @click="mode = 'world'">World</button>
@@ -439,6 +446,15 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
           <button type="button" aria-label="Fit the map" @click="fit">⤢</button>
         </div>
       </template>
+      <button
+        type="button"
+        class="fold"
+        :aria-expanded="controlsOpen"
+        :aria-label="controlsOpen ? 'Hide the controls' : 'Show the controls'"
+        @click="controlsOpen = !controlsOpen"
+      >
+        {{ controlsOpen ? '×' : '☰' }}
+      </button>
     </div>
   </div>
 </template>
@@ -710,13 +726,46 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
   text-decoration: underline;
 }
 
-@media (max-width: 600px) {
+/* The fold button: on a phone only */
+.fold {
+  display: none;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--fg);
+  background: rgba(15, 20, 25, 0.82);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+@media (max-width: 700px) {
   .controls {
     top: auto;
     bottom: 52px;
     right: 8px;
+    align-items: flex-end;
   }
 
+  .fold {
+    display: block;
+  }
+
+  .controls.folded .seg {
+    display: none;
+  }
+
+  /* In Align mode, just above its toolbar */
+  .controls.over-bar {
+    bottom: calc(var(--align-bar) + 8px);
+  }
+}
+
+@media (max-width: 600px) {
   .readout {
     left: 8px;
     bottom: 8px;
