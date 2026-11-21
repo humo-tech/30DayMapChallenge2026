@@ -69,7 +69,9 @@ export function toBase(f: FrameData, lng: number, lat: number): XY {
     const la = Math.max(-85, Math.min(85, lat))
     return [lng, Math.log(Math.tan(Math.PI / 4 + (la * DEG) / 2)) / DEG]
   }
-  let lam = lng - (f.lng0 ?? 0) + (f.shift ?? 0)
+  // Longitude in -180..180 first, so a frame that doesn't wrap (shifted round the cut) gets the
+  // same place whichever way round it's written (330° or -30°)
+  let lam = ((((lng + 180) % 360) + 360) % 360) - 180 - (f.lng0 ?? 0) + (f.shift ?? 0)
   if (f.wrap ?? true) lam = ((((lam + 180) % 360) + 360) % 360) - 180
   return naturalEarth(lam, lat)
 }

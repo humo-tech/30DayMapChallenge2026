@@ -56,7 +56,7 @@ def mercator(lng, lat, frame):
 
 
 def natural_earth(lng, lat, frame):
-    lam = np.asarray(lng, float) - frame["lng0"] + frame.get("shift", 0)
+    lam = (np.asarray(lng, float) + 180) % 360 - 180 - frame["lng0"] + frame.get("shift", 0)
     if frame.get("wrap", True):
         lam = (lam + 180) % 360 - 180
     l, p = np.radians(lam), np.radians(lat)

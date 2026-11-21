@@ -35,7 +35,8 @@ def to_base(f, lng, lat):
     if f.get("base") == "mercator":
         la = max(-85.0, min(85.0, lat))
         return lng, math.log(math.tan(math.pi / 4 + la * DEG / 2)) / DEG
-    lam = lng - f.get("lng0", 0) + f.get("shift", 0)
+    # Longitude in -180..180 first, as the page does (so 330° and -30° are the same place)
+    lam = ((lng + 180) % 360) - 180 - f.get("lng0", 0) + f.get("shift", 0)
     if f.get("wrap", True):
         lam = ((lam + 180) % 360) - 180
     return natural_earth(lam, lat)
