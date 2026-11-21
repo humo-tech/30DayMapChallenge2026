@@ -24,6 +24,13 @@ import { autoFit, matchable, respace, scaleOf, toMapData, type AlignFrame, type 
 import { loadPdf, type PdfArt } from './pdfArt'
 import { usePanZoom, type Box } from './usePanZoom'
 
+// On a phone, the page's fold button hides the toolbar (the status line stays); the toolbar's
+// height goes back to the page, which keeps its own controls just above it
+defineProps<{ folded?: boolean }>()
+const emit = defineEmits<{ barHeight: [px: number] }>()
+const barEl = ref<HTMLDivElement>()
+let barObserver: ResizeObserver | undefined
+
 const dataURL = `${useRuntimeConfig().app.baseURL}data/day22`
 
 type RefName = 'japan' | 'world'
@@ -467,10 +474,16 @@ const status = computed(() => {
 
 const scale = (pz: { view: Ref<{ k: number }> }) => 1 / pz.view.value.k
 
-onMounted(() => window.addEventListener('keydown', onKey))
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  barObserver = new ResizeObserver(() => emit('barHeight', barEl.value?.offsetHeight ?? 0))
+  barObserver.observe(barEl.value!)
+})
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
   cancelAnimationFrame(grabFrame)
+  barObserver?.disconnect()
+  emit('barHeight', 0)
   if (art.value) URL.revokeObjectURL(art.value.image)
 })
 </script>
@@ -574,7 +587,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="bar">
+    <div ref="barEl" class="bar" :class="{ folded }">
       <div class="tools">
         <div class="seg">
           <button type="button" @click="pdfInput?.click()">Open PDF…</button>
@@ -812,6 +825,15 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 700px) {
+  .bar.folded .tools {
+    display: none;
+  }
+
+  .bar.folded .status {
+    margin-top: 0;
+    padding-right: 48px; /* clear of the fold button */
+  }
+
   .panes {
     grid-template-columns: 1fr;
     grid-template-rows: 2fr 3fr;
