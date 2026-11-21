@@ -41,6 +41,8 @@ python3 -m http.server -d .output/public 4173 &
 node scripts/capture_thumbs.mjs [day ...] --base http://localhost:4173
 ```
 
+Set `PW_CHANNEL=chrome` to launch the installed Google Chrome instead of Playwright's own browser.
+
 ### Adding map libraries
 
 Install what each day needs:
