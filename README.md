@@ -31,9 +31,9 @@ All 30 day pages are prerendered up front. Days without an `app/maps/dayXX.vue` 
 
 ### Thumbnails
 
-The home page shows a thumbnail per day. Drop an image at `app/assets/thumbs/dayXX.jpg` (or `.webp` / `.png`, 16:10 recommended) and it appears on the card; days without one show a placeholder with the day number.
+The home page shows a thumbnail per day. Drop an image at `app/assets/thumbs/dayXX.webp` (or `.jpg` / `.png`; 640×400 — the cards show it at most ~330 CSS px wide) and it appears on the card; days without one show a placeholder with the day number.
 
-`scripts/capture_thumbs.mjs` captures every published map with Playwright (uses the preinstalled one if the project has none). `pnpm dev` can fail on the Navara wasm import, so use the static build:
+`scripts/capture_thumbs.mjs` captures every published map with Playwright (uses the preinstalled one if the project has none) at 1280×800 and saves it halved to 640×400 WebP (averaged in linear light, so fine bright detail doesn't dim; quality 0.85, encoded by the browser). `pnpm dev` can fail on the Navara wasm import, so use the static build:
 
 ```bash
 pnpm generate
