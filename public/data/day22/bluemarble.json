@@ -1,0 +1,21 @@
+{
+  "source": "NASA Blue Marble: shaded relief and bathymetry (NASA GIBS)",
+  "japan": {
+    "file": "bluemarble-japan.jpg",
+    "bbox": [
+      121,
+      22,
+      151,
+      47
+    ]
+  },
+  "world": {
+    "file": "bluemarble-world.jpg",
+    "bbox": [
+      -180,
+      -90,
+      180,
+      90
+    ]
+  }
+}

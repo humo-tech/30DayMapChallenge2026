@@ -23,6 +23,7 @@ import {
   type XY,
 } from './lib/freehand'
 import { usePanZoom } from './lib/usePanZoom'
+import { warpRaster } from './lib/warpRaster'
 import MercatorPane from './lib/MercatorPane.vue'
 // pdf.js and the fitting load only when Align mode is opened
 const AlignPanel = defineAsyncComponent(() => import('./lib/AlignPanel.vue'))
@@ -42,18 +43,36 @@ type Loaded = {
   pins: (Placed & { name: string; lng: number; lat: number; order: number })[]
   graticule?: string
   real?: string
+  landPath?: string
+  rasters: Partial<Record<Raster, Promise<string>>> // warped, by raster
 }
 
-const SETTINGS: Record<MapMode, { pin: number; snap: number; grid: number; step: number; lng: [number, number]; lat: [number, number] }> = {
-  japan: { pin: 0.72, snap: 20, grid: 1, step: 0.05, lng: [122, 150], lat: [23, 46] },
+type Settings = { pin: number; snap: number; grid: number; step: number; lng: [number, number]; lat: [number, number] }
+// Blue Marble: the grid it's warped on (degrees), and its pixels per art unit
+type Warp = { lng: [number, number]; lat: [number, number]; step: number; scale: number }
+const SETTINGS: Record<MapMode, Settings & { warp: Warp }> = {
+  japan: {
+    pin: 0.72, snap: 20, grid: 1, step: 0.05, lng: [122, 150], lat: [23, 46],
+    warp: { lng: [121.5, 150.5], lat: [22.5, 46.5], step: 0.08, scale: 2.5 },
+  },
   // Parallels run from the cut at 30°W round to it again, so they don't jump across the map
-  world: { pin: 0.55, snap: 22, grid: 15, step: 0.5, lng: [-30, 330], lat: [-60, 75] },
+  world: {
+    pin: 0.55, snap: 22, grid: 15, step: 0.5, lng: [-30, 330], lat: [-60, 75],
+    warp: { lng: [-30, 330], lat: [-60, 85], step: 1, scale: 2.5 },
+  },
 }
 
 const mode = ref<Mode>('japan')
 const mapMode = ref<MapMode>('japan') // the last map shown
 const showTies = ref(false)
 const showReal = ref(false)
+// A raster warped onto the freehand map: NASA's Blue Marble, or a 0.5° grid to show the stretch
+type Raster = 'bluemarble' | 'grid'
+const raster = ref<Raster>()
+const landOnly = ref(true)
+const rasterUrl = ref<string>()
+const warping = ref(false)
+const toggleRaster = (r: Raster) => (raster.value = raster.value === r ? undefined : r)
 const loaded = shallowRef<Loaded>()
 const loading = ref(true)
 const container = ref<HTMLDivElement>()
@@ -99,7 +118,7 @@ async function load(m: MapMode): Promise<Loaded> {
   ;[...pins].sort((a, b) => a.xy[1] - b.xy[1]).forEach((p, i) => (p.order = i))
 
   const realRings = new Map(data.regions.map((r) => [r.id, decodeRings(r.rings, data.quantum)]))
-  return { data, art: svg.innerHTML, proj, artRings, dots, realRings, pins }
+  return { data, art: svg.innerHTML, proj, artRings, dots, realRings, pins, rasters: {} }
 }
 
 async function show(m: Mode) {
@@ -143,6 +162,62 @@ const real = computed(() => {
   }
   return l.real
 })
+
+// ---- Rasters warped onto the art (lib/warpRaster.ts), each the first time it's asked for.
+// Blue Marble comes per map (scripts/day22/fetch_blue_marble.py); so does the grid
+// (scripts/day22/make_grid.py): the world 3600 x 1800 with lines every 0.5°, Japan cut from a
+// 10800-wide base (30 px per degree) with lines every 0.2°.
+
+type RasterSource = { file: string; bbox: [number, number, number, number] }
+const GRIDS: Record<MapMode, RasterSource & { step: number }> = {
+  japan: { file: 'grid-japan.png', bbox: [121, 22, 151, 47], step: 0.2 },
+  world: { file: 'grid-3600x1800.png', bbox: [-180, -90, 180, 90], step: 0.5 },
+}
+let blueMarbleMeta: Promise<Record<MapMode, RasterSource>> | undefined
+
+async function rasterSource(r: Raster, m: MapMode): Promise<RasterSource> {
+  if (r === 'grid') return GRIDS[m]
+  blueMarbleMeta ??= fetch(`${dataURL}/bluemarble.json`).then((res) => res.json())
+  return (await blueMarbleMeta)[m]
+}
+
+async function warp(l: Loaded, r: Raster, m: MapMode): Promise<string> {
+  const src = await rasterSource(r, m)
+  const image = new Image()
+  image.src = `${dataURL}/${src.file}`
+  await image.decode()
+  return warpRaster(l.proj, image, { bbox: src.bbox, width: l.data.width, height: l.data.height, ...SETTINGS[m].warp })
+}
+
+watch([raster, loaded], async ([r, l]) => {
+  rasterUrl.value = undefined
+  const m = mapMode.value
+  if (!r || !l) return
+  warping.value = true
+  try {
+    const url = await (l.rasters[r] ??= warp(l, r, m))
+    if (loaded.value === l && raster.value === r) rasterUrl.value = url
+  } finally {
+    warping.value = false
+  }
+})
+
+/** Every region's outline on the art (dots for the smallest countries), to clip Blue Marble to the land */
+const landPath = computed(() => {
+  const l = loaded.value
+  if (!l || !raster.value) return ''
+  if (l.landPath === undefined) {
+    const rings = [...l.artRings.values()].flat()
+    const r = 3.2
+    l.landPath =
+      rings.map((ring) => 'M' + ring.map(([x, y]) => `${x} ${y}`).join('L') + 'Z').join('') +
+      [...l.dots.values()].map(([x, y]) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`).join('')
+  }
+  return l.landPath
+})
+
+// The real borders for the Mercator map beside (all the regions' rings)
+const realBorders = computed(() => (loaded.value ? [...loaded.value.realRings.values()].flat() : []))
 
 const ties = computed(() => {
   const l = loaded.value
@@ -242,6 +317,23 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
       <!-- The designer's art, as delivered -->
       <g class="art" v-html="loaded.art" />
 
+      <!-- A raster warped by the projection: on the land only, or sea and all; the borders back on top -->
+      <template v-if="raster && rasterUrl">
+        <defs>
+          <clipPath id="day22-land"><path :d="landPath" clip-rule="evenodd" /></clipPath>
+        </defs>
+        <image
+          :href="rasterUrl"
+          x="0"
+          y="0"
+          :width="loaded.data.width"
+          :height="loaded.data.height"
+          preserveAspectRatio="none"
+          :clip-path="landOnly ? 'url(#day22-land)' : undefined"
+        />
+        <path class="bm-borders" :class="raster" :d="landPath" />
+      </template>
+
       <path v-if="showTies" class="graticule" :d="graticule" />
       <path v-if="showReal" class="real" :d="real" />
       <g v-if="showTies" class="ties">
@@ -294,6 +386,7 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
 
     <div class="readout">
       <span v-if="loading">Loading…</span>
+      <span v-else-if="warping">Warping {{ raster === 'grid' ? 'the grid' : 'Blue Marble' }}…</span>
       <span v-else-if="cursor">{{ fmtLngLat(cursor.lng, cursor.lat) }}</span>
       <span v-else-if="cursor === null" class="off">off the map</span>
       <span v-else-if="mine && !mine.xy" class="off">{{ fmtLngLat(mine.lng, mine.lat) }} is off this map</span>
@@ -306,12 +399,21 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
         <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
       </template>
       <template v-else><a href="https://www.naturalearthdata.com/">Natural Earth</a></template>
+      <template v-if="raster === 'bluemarble'"> · Blue Marble: <a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a></template>
     </div>
     </div>
 
     <!-- The same places on Web Mercator, to compare -->
     <div v-show="mode !== 'align'" class="mercator">
-      <MercatorPane :view="mapMode" :pins="loaded?.data.pins ?? []" :picked="mine" @pick="pickAt" />
+      <MercatorPane
+        :view="mapMode"
+        :pins="loaded?.data.pins ?? []"
+        :picked="mine"
+        :imagery="raster === 'bluemarble' ? 'bluemarble' : 'papers'"
+        :grid="raster === 'grid' ? GRIDS[mapMode].step : undefined"
+        :borders="realBorders"
+        @pick="pickAt"
+      />
     </div>
 
     <div class="controls">
@@ -321,6 +423,11 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
         <button type="button" :aria-pressed="mode === 'align'" @click="mode = 'align'">Align a PDF</button>
       </div>
       <template v-if="mode !== 'align'">
+        <div class="seg" role="group" aria-label="Raster">
+          <button type="button" :aria-pressed="raster === 'bluemarble'" @click="toggleRaster('bluemarble')">Blue Marble</button>
+          <button type="button" :aria-pressed="raster === 'grid'" @click="toggleRaster('grid')">Grid {{ GRIDS[mapMode].step }}°</button>
+          <button v-if="raster" type="button" :aria-pressed="landOnly" @click="landOnly = !landOnly">Land only</button>
+        </div>
         <div class="seg" role="group" aria-label="Show">
           <button type="button" :aria-pressed="showTies" @click="showTies = !showTies">Ties</button>
           <button type="button" :aria-pressed="showReal" @click="showReal = !showReal">Real borders</button>
@@ -437,6 +544,20 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
   stroke-width: 0.8;
   stroke-dasharray: 3 3;
   vector-effect: non-scaling-stroke;
+}
+
+.bm-borders {
+  fill: none;
+  stroke: #ffffff;
+  stroke-opacity: 0.85;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+/* On the pale grid, the borders in ink */
+.bm-borders.grid {
+  stroke: #1d3557;
+  stroke-opacity: 0.7;
 }
 
 .real {

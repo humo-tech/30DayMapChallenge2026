@@ -6,7 +6,7 @@ import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 // MapLibre finds its worker next to its own module, which Vite's bundling moves: point it there
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-import { fmtLngLat } from './freehand'
+import { fmtLngLat, type Ring } from './freehand'
 
 maplibregl.setWorkerUrl(workerUrl)
 
@@ -16,6 +16,11 @@ const props = defineProps<{
   view: 'japan' | 'world'
   pins: Place[]
   picked?: { lng: number; lat: number; key: number }
+  imagery: 'papers' | 'bluemarble'
+  /** The grid warped onto the freehand map, drawn here as lines: its finest step in degrees */
+  grid?: number
+  /** The real borders the freehand map is fitted to (prefectures or countries), lng / lat */
+  borders: Ring[]
 }>()
 const emit = defineEmits<{ pick: [lng: number, lat: number] }>()
 
@@ -34,10 +39,58 @@ let observer: ResizeObserver | undefined
 // Until the map's been moved by hand, a change of size frames it again
 let moved = false
 
+const borderLines = (rings: Ring[]): GeoJSON.Feature => ({
+  type: 'Feature',
+  properties: {},
+  geometry: { type: 'MultiLineString', coordinates: rings.map((r) => [...r, r[0]!]) },
+})
+
 const geojson = (pins: Place[]): GeoJSON.FeatureCollection => ({
   type: 'FeatureCollection',
   features: pins.map((p) => ({ type: 'Feature', properties: { name: p.name }, geometry: { type: 'Point', coordinates: [p.lng, p.lat] } })),
 })
+
+// The grid, as in scripts/day22/make_grid.py: lines at the finest step, 1°, 5° and 10°, the equator and
+// the prime meridian heavier, the 10° squares shaded alternately (lightly, over the basemap).
+// Mercator stops short of the poles.
+const GRID_LAT = 85
+function gridLines(step: number): GeoJSON.FeatureCollection {
+  const level = (v: number) => (v === 0 ? 'axis' : v % 10 === 0 ? '10' : v % 5 === 0 ? '5' : v % 1 === 0 ? '1' : 'fine')
+  const n = Math.round(1 / step) // integer steps, so 0.2° adds up exactly
+  const features: GeoJSON.Feature[] = []
+  for (let i = -180 * n; i <= 180 * n; i++) {
+    const lng = i / n
+    features.push({ type: 'Feature', properties: { level: level(lng) }, geometry: { type: 'LineString', coordinates: [[lng, -GRID_LAT], [lng, GRID_LAT]] } })
+  }
+  for (let i = -GRID_LAT * n; i <= GRID_LAT * n; i++) {
+    const lat = i / n
+    features.push({ type: 'Feature', properties: { level: level(lat) }, geometry: { type: 'LineString', coordinates: [[-180, lat], [0, lat], [180, lat]] } })
+  }
+  return { type: 'FeatureCollection', features }
+}
+function gridCells(): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = []
+  for (let i = 0; i < 36; i++) {
+    for (let j = 0; j < 18; j++) {
+      if ((i + j) % 2 === 0) continue
+      const [w, n] = [-180 + i * 10, 90 - j * 10]
+      const [s, e] = [Math.max(n - 10, -GRID_LAT), w + 10]
+      const top = Math.min(n, GRID_LAT)
+      features.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[w, s], [e, s], [e, top], [w, top], [w, s]]] } })
+    }
+  }
+  return { type: 'FeatureCollection', features }
+}
+
+function showGrid(m: maplibregl.Map) {
+  const v = props.grid ? 'visible' : 'none'
+  for (const id of ['grid-cells', 'grid-lines']) m.setLayoutProperty(id, 'visibility', v)
+}
+
+/** Light lines on Blue Marble, ink on the light maps */
+function showBorderColor(m: maplibregl.Map) {
+  m.setPaintProperty('borders', 'line-color', props.imagery === 'bluemarble' ? '#ffffff' : '#1d3557')
+}
 
 function frame(m: maplibregl.Map) {
   moved = false
@@ -85,10 +138,21 @@ onMounted(() => {
       sources: {
         // Re:Earth Papers, light (as on Days 3 and 9); its attribution comes with the TileJSON
         papers: { type: 'raster', url: 'https://papers.reearth.land/styles/papers-light/tilejson.json', tileSize: 512 },
+        // The same Blue Marble as the freehand map's, in Web Mercator tiles
+        bluemarble: {
+          type: 'raster',
+          tiles: [
+            'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief_Bathymetry/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg',
+          ],
+          tileSize: 256,
+          maxzoom: 8,
+          attribution: 'Blue Marble: <a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a>',
+        },
       },
       layers: [
         { id: 'sea', type: 'background', paint: { 'background-color': SEA } },
-        { id: 'papers', type: 'raster', source: 'papers' },
+        { id: 'papers', type: 'raster', source: 'papers', layout: { visibility: props.imagery === 'papers' ? 'visible' : 'none' } },
+        { id: 'bluemarble', type: 'raster', source: 'bluemarble', layout: { visibility: props.imagery === 'bluemarble' ? 'visible' : 'none' } },
       ],
     },
     center: [137, 36],
@@ -103,6 +167,48 @@ onMounted(() => {
   frame(m)
 
   m.on('load', () => {
+    m.addSource('grid-lines', { type: 'geojson', data: gridLines(props.grid ?? 0.5) })
+    m.addSource('grid-cells', { type: 'geojson', data: gridCells() })
+    // Over the basemap, so the coasts still show
+    m.addLayer({ id: 'grid-cells', type: 'fill', source: 'grid-cells', paint: { 'fill-color': '#c9b88f', 'fill-opacity': 0.22 } })
+    m.addLayer({
+      id: 'grid-lines',
+      type: 'line',
+      source: 'grid-lines',
+      paint: {
+        'line-color': ['match', ['get', 'level'], 'axis', '#96141e', '10', '#c2272d', '5', '#546476', '1', '#a09680', '#cdc5b2'],
+        'line-width': ['match', ['get', 'level'], 'axis', 2.5, '10', 1.6, '5', 1.4, 1],
+        // The finest and 1° lines only once they're far enough apart
+        // (zoom outermost: MapLibre allows it nowhere else)
+        'line-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          1.5,
+          ['match', ['get', 'level'], 'fine', 0, '1', 0, 1],
+          3,
+          ['match', ['get', 'level'], 'fine', 0.2, 1],
+          4.5,
+          1,
+        ],
+      },
+    })
+    gridStep = props.grid ?? 0.5
+    showGrid(m)
+    // The same borders as the freehand map's, on top of the basemap and the grid
+    m.addSource('borders', { type: 'geojson', data: borderLines(props.borders) })
+    m.addLayer({
+      id: 'borders',
+      type: 'line',
+      source: 'borders',
+      layout: { 'line-join': 'round' },
+      paint: {
+        'line-color': '#1d3557',
+        'line-opacity': 0.7,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.6, 8, 1.4],
+      },
+    })
+    showBorderColor(m)
     m.addSource('pins', { type: 'geojson', data: geojson(props.pins) })
     m.addLayer({
       id: 'pins',
@@ -150,6 +256,32 @@ watch(
   (pins) => (map?.getSource('pins') as maplibregl.GeoJSONSource | undefined)?.setData(geojson(pins)),
 )
 watch(() => props.picked, showPicked)
+watch(
+  () => props.borders,
+  (rings) => (map?.getSource('borders') as maplibregl.GeoJSONSource | undefined)?.setData(borderLines(rings)),
+)
+let gridStep = 0
+watch(
+  () => props.grid,
+  (step) => {
+    if (!map?.getLayer('grid-lines')) return
+    // Lines at the new step (0.2° for Japan, 0.5° for the world)
+    if (step && step !== gridStep) {
+      gridStep = step
+      ;(map.getSource('grid-lines') as maplibregl.GeoJSONSource).setData(gridLines(step))
+    }
+    showGrid(map)
+  },
+)
+watch(
+  () => props.imagery,
+  (im) => {
+    if (!map?.isStyleLoaded()) return
+    map.setLayoutProperty('papers', 'visibility', im === 'papers' ? 'visible' : 'none')
+    map.setLayoutProperty('bluemarble', 'visibility', im === 'bluemarble' ? 'visible' : 'none')
+    if (map.getLayer('borders')) showBorderColor(map)
+  },
+)
 
 onBeforeUnmount(() => {
   observer?.disconnect()
