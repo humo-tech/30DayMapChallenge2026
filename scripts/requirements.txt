@@ -7,3 +7,4 @@ Pillow>=10.0
 pmtiles>=3.5
 mapbox-vector-tile>=2.1
 shapely>=2.0
+osmium>=4.0
