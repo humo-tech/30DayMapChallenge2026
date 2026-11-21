@@ -22,6 +22,9 @@ const base = opt('base', 'http://localhost:3000').replace(/\/$/, '')
 const wait = Number(opt('wait', 8000))
 const THUMB_W = 640
 const THUMB_H = 400
+// Days captured at another URL (Day 22: the freehand map alone, without the Mercator map beside,
+// with its ties and the real borders)
+const PATHS = { 22: '/day/22?compare=off&ties=on&real=on' }
 const days = args.length ? args.map(Number) : Array.from({ length: 30 }, (_, i) => i + 1)
 
 mkdirSync('app/assets/thumbs', { recursive: true })
@@ -30,7 +33,7 @@ const browser = await chromium.launch({ channel: process.env.PW_CHANNEL, args: [
 const page = await browser.newPage({ viewport: { width: THUMB_W * 2, height: THUMB_H * 2 } })
 
 for (const day of days) {
-  const res = await page.goto(`${base}/day/${day}`, { waitUntil: 'load' }).catch(() => null)
+  const res = await page.goto(`${base}${PATHS[day] ?? `/day/${day}`}`, { waitUntil: 'load' }).catch(() => null)
   if (!res || !res.ok()) continue
   const hasCanvas = await page.waitForSelector('canvas, .map-content img, .map-content svg', { timeout: 30000 }).then(() => true).catch(() => false)
   if (!hasCanvas) { console.log(`day${day}: no map, skipped`); continue }

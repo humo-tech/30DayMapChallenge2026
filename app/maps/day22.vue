@@ -5,7 +5,7 @@
 // The art is plain SVG, shown as it is; the pins, the graticule and the real borders on top of it
 // all go through the projection. Click anywhere for the place under the pointer.
 // Beside it, the same places on Web Mercator (lib/MercatorPane.vue): a click on either map puts a
-// pin on both. "Align a PDF" fits the projection to a designer's own PDF, half by hand (lib/AlignPanel.vue).
+// pin on both. "Compare" (or ?compare=off) hides it. "Align a PDF" fits the projection to a designer's own PDF, half by hand (lib/AlignPanel.vue).
 // Data: scripts/day22/build_maps.py (the art and the ties) -> public/data/day22/
 import {
   FreehandProjection,
@@ -66,8 +66,10 @@ const SETTINGS: Record<MapMode, Settings & { warp: Warp }> = {
 
 const mode = ref<Mode>('japan')
 const mapMode = ref<MapMode>('japan') // the last map shown
-const showTies = ref(false)
-const showReal = ref(false)
+// The URL can turn some on from the start: ?ties=on&real=on (and ?compare=off, below)
+const query = useRoute().query
+const showTies = ref(query.ties === 'on')
+const showReal = ref(query.real === 'on')
 // A raster warped onto the freehand map: NASA's Blue Marble, or a 0.5° grid to show the stretch
 type Raster = 'bluemarble' | 'grid'
 const raster = ref<Raster>()
@@ -76,6 +78,15 @@ const rasterUrl = ref<string>()
 const warping = ref(false)
 // On a phone the controls fold away (with Align mode's toolbar) behind one button
 const controlsOpen = ref(true)
+// The Web Mercator map beside, to compare; off (?compare=off) the freehand map takes the whole page
+const compare = ref(query.compare !== 'off')
+watch(compare, async () => {
+  await nextTick()
+  // Its new size now (the resize observer would only report it after this frame), then fit to it
+  const el = container.value
+  if (el) pz.size.value = { w: el.clientWidth, h: el.clientHeight }
+  fit()
+})
 const alignBar = ref(0) // Align mode's toolbar height, to keep the controls above it on a phone
 const toggleRaster = (r: Raster) => (raster.value = raster.value === r ? undefined : r)
 const loaded = shallowRef<Loaded>()
@@ -311,6 +322,7 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
       v-show="mode !== 'align'"
       ref="container"
       class="viewer"
+      :class="{ solo: !compare }"
       @pointerdown="pz.handlers.onDown"
       @pointermove="pz.handlers.onMove"
       @pointerup="pz.handlers.onUp"
@@ -395,7 +407,7 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
       <span v-else-if="cursor">{{ fmtLngLat(cursor.lng, cursor.lat) }}</span>
       <span v-else-if="cursor === null" class="off">off the map</span>
       <span v-else-if="mine && !mine.xy" class="off">{{ fmtLngLat(mine.lng, mine.lat) }} is off this map</span>
-      <span v-else class="hint">Click either map: a pin on both</span>
+      <span v-else class="hint">{{ compare ? 'Click either map: a pin on both' : 'Click the map: where is that?' }}</span>
     </div>
 
     <div class="attribution">
@@ -409,7 +421,7 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
     </div>
 
     <!-- The same places on Web Mercator, to compare -->
-    <div v-show="mode !== 'align'" class="mercator">
+    <div v-show="mode !== 'align' && compare" class="mercator">
       <MercatorPane
         :view="mapMode"
         :pins="loaded?.data.pins ?? []"
@@ -440,6 +452,7 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
         <div class="seg" role="group" aria-label="Show">
           <button type="button" :aria-pressed="showTies" @click="showTies = !showTies">Ties</button>
           <button type="button" :aria-pressed="showReal" @click="showReal = !showReal">Real borders</button>
+          <button type="button" :aria-pressed="compare" title="The Web Mercator map beside" @click="compare = !compare">Compare</button>
         </div>
         <div class="seg">
           <button type="button" :disabled="locating" @click="locate">{{ locating ? 'Locating…' : 'Where am I?' }}</button>
@@ -524,6 +537,10 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
   left: 0;
 }
 
+.viewer.solo {
+  width: 100%;
+}
+
 .mercator {
   right: 0;
   border-left: 2px solid #0f1419;
@@ -540,6 +557,10 @@ onBeforeUnmount(() => cancelAnimationFrame(readoutFrame))
 
   .viewer {
     bottom: 45%;
+  }
+
+  .viewer.solo {
+    bottom: 0;
   }
 
   .mercator {
