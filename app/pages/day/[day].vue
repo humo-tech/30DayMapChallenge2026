@@ -40,10 +40,12 @@ const next = day < THEMES.length ? day + 1 : null
 
     <header class="map-header" :class="{ pending: !MapContent }">
       <div class="nav">
+        <!-- Left-aligned, each always in its slot: they stay put whatever the panel's width (set by the title) -->
         <NuxtLink to="/">← Home</NuxtLink>
-        <span class="spacer" />
         <NuxtLink v-if="prev" :to="`/day/${prev}`">‹ Prev</NuxtLink>
+        <span v-else class="off" aria-hidden="true">‹ Prev</span>
         <NuxtLink v-if="next" :to="`/day/${next}`">Next ›</NuxtLink>
+        <span v-else class="off" aria-hidden="true">Next ›</span>
       </div>
       <h1>Day {{ day }}: {{ theme.title }}</h1>
       <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>

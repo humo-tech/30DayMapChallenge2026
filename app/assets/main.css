@@ -266,6 +266,16 @@ a {
   flex: 1;
 }
 
+/* A little more room between Home and the Prev / Next pair */
+.map-header .nav > :first-child {
+  margin-right: 8px;
+}
+
+/* Prev / Next on the first and last day: a dimmed stand-in, so the other keeps its place */
+.map-header .nav .off {
+  opacity: 0.35;
+}
+
 .map-header h1 {
   margin: 4px 0 0;
   font-size: 20px;
