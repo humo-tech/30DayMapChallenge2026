@@ -161,7 +161,7 @@ const pins = computed(() => {
     .map((pin) => {
       const raw = p.project(pin.lng, pin.lat)
       if (!raw) return null
-      return { ...pin, xy: placePin(raw, shapeRings.value.get(pin.region), undefined, 20 * unit, 1.5 * unit).xy }
+      return { ...pin, xy: placePin(raw, shapeRings.value.get(pin.region), undefined, 3 * unit, 1 * unit).xy }
     })
     .filter((x) => x !== null)
 })

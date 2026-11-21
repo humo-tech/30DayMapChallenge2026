@@ -47,17 +47,19 @@ type Loaded = {
   rasters: Partial<Record<Raster, Promise<string>>> // warped, by raster
 }
 
+// snap: how far (art units) a pin just off its region's art is moved onto it; only a hair, to cover
+// a coast the designer smoothed, not to drag a pin in from the sea
 type Settings = { pin: number; snap: number; grid: number; step: number; lng: [number, number]; lat: [number, number] }
 // Blue Marble: the grid it's warped on (degrees), and its pixels per art unit
 type Warp = { lng: [number, number]; lat: [number, number]; step: number; scale: number }
 const SETTINGS: Record<MapMode, Settings & { warp: Warp }> = {
   japan: {
-    pin: 0.72, snap: 20, grid: 1, step: 0.05, lng: [122, 150], lat: [23, 46],
+    pin: 0.72, snap: 3, grid: 1, step: 0.05, lng: [122, 150], lat: [23, 46],
     warp: { lng: [121.5, 150.5], lat: [22.5, 46.5], step: 0.08, scale: 2.5 },
   },
   // Parallels run from the cut at 30°W round to it again, so they don't jump across the map
   world: {
-    pin: 0.55, snap: 22, grid: 15, step: 0.5, lng: [-30, 330], lat: [-60, 75],
+    pin: 0.55, snap: 3, grid: 15, step: 0.5, lng: [-30, 330], lat: [-60, 75],
     warp: { lng: [-30, 330], lat: [-60, 85], step: 1, scale: 2.5 },
   },
 }
@@ -110,7 +112,7 @@ async function load(m: MapMode): Promise<Loaded> {
     .map((p) => {
       const raw = proj.project(p.lng, p.lat)
       if (!raw) return null
-      const placed = placePin(raw, artRings.get(p.region), dots.get(p.region), s.snap, 1.5)
+      const placed = placePin(raw, artRings.get(p.region), dots.get(p.region), s.snap, 1)
       return { ...placed, name: p.name, lng: p.lng, lat: p.lat, order: 0 }
     })
     .filter((p) => p !== null)
@@ -257,7 +259,7 @@ function pickAt(lng: number, lat: number) {
   if (raw) {
     const region = [...l.realRings].find(([, rings]) => inRings([lng, lat], rings))?.[0]
     const s = SETTINGS[mapMode.value]
-    xy = placePin(raw, region ? l.artRings.get(region) : undefined, region ? l.dots.get(region) : undefined, s.snap, 1.5).xy
+    xy = placePin(raw, region ? l.artRings.get(region) : undefined, region ? l.dots.get(region) : undefined, s.snap, 1).xy
     // Bring it into view if it's off the edge
     const [sx, sy] = pz.toScreen(xy)
     const { w, h } = size.value
