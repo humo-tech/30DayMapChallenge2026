@@ -1,6 +1,6 @@
 // Pan and zoom for an SVG over a box of content (Day 22): drag to pan, wheel or pinch to zoom,
 // a click (press and release without moving) reported in content units. Optionally, a drag can
-// draw a rectangle instead of panning.
+// draw a rectangle instead of panning, or move something the press landed on.
 import type { Ref } from 'vue'
 import type { XY } from './freehand'
 
@@ -13,6 +13,13 @@ export type PanZoomOptions = {
   /** While true, a drag draws a rectangle (reported to onRect) instead of panning */
   rectMode?: () => boolean
   onRect?: (a: XY, b: XY) => void
+  /**
+   * A press here may start dragging something (a marker) instead of the view: return true to
+   * take it, and get the moves (onDrag) and the release (onDragEnd), in content units
+   */
+  onDragStart?: (p: XY) => boolean
+  onDrag?: (p: XY) => void
+  onDragEnd?: () => void
   /** Presses on these are left alone (pins, markers) */
   ignore?: (target: Element) => boolean
   maxZoom?: number
@@ -51,6 +58,7 @@ export function usePanZoom(el: Ref<HTMLElement | undefined>, opts: PanZoomOption
   const pointers = new Map<number, { x: number; y: number }>()
   let press: { x: number; y: number; t: number; moved: boolean; rect: boolean } | undefined
   let pinch: { d: number; cx: number; cy: number } | undefined
+  let dragging = false
 
   function local(e: PointerEvent | WheelEvent) {
     const r = el.value!.getBoundingClientRect()
@@ -64,6 +72,11 @@ export function usePanZoom(el: Ref<HTMLElement | undefined>, opts: PanZoomOption
     el.value!.setPointerCapture(e.pointerId)
     const p = local(e)
     pointers.set(e.pointerId, p)
+    if (pointers.size === 1 && opts.onDragStart?.(toContent(p.x, p.y))) {
+      dragging = true
+      press = undefined
+      return
+    }
     press = pointers.size === 1 ? { ...p, t: performance.now(), moved: false, rect: !!opts.rectMode?.() } : undefined
     pinch = undefined
     rect.value = undefined
@@ -71,6 +84,10 @@ export function usePanZoom(el: Ref<HTMLElement | undefined>, opts: PanZoomOption
 
   function onMove(e: PointerEvent) {
     const p = local(e)
+    if (dragging) {
+      if (pointers.has(e.pointerId)) opts.onDrag?.(toContent(p.x, p.y))
+      return
+    }
     const prev = pointers.get(e.pointerId)
     if (prev) {
       if (pointers.size === 1 && press) {
@@ -99,6 +116,11 @@ export function usePanZoom(el: Ref<HTMLElement | undefined>, opts: PanZoomOption
 
   function onUp(e: PointerEvent) {
     pointers.delete(e.pointerId)
+    if (dragging) {
+      dragging = false
+      opts.onDragEnd?.()
+      return
+    }
     if (pointers.size < 2) pinch = undefined
     if (press) {
       const p = local(e)

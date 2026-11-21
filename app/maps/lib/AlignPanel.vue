@@ -2,8 +2,9 @@
 // Day 22's Align mode: a designer's PDF (as exported from Illustrator) fitted to the real map, half
 // by hand. Click a place on the art and the same place on the real map, a few times; the fit is
 // straight (affine) at first, a thin-plate spline from six ties. Parts the designer moved on their
-// own (an inset box, a shrunk island) get a rectangle on each side. "Auto-fit" then matches the
-// art's outlines to the real borders (lib/align.ts). The ties export as JSON.
+// own (an inset box, a shrunk island) get a rectangle on each side. A tie can be dragged (or nudged
+// with the arrow keys) on either map. "Auto-fit" then matches the art's outlines to the real
+// borders (lib/align.ts). The ties export as JSON.
 import {
   FreehandProjection,
   decodeRings,
@@ -176,7 +177,48 @@ const nearHand = (p: XY, k: number, side: 'art' | 'ref') =>
     return Math.hypot(q[0] - p[0], q[1] - p[1]) < 9 / k
   })
 
+/** Moves a hand tie on one side: its place on the art, or on the real map (content units of that pane) */
+function moveTie(i: number, side: 'art' | 'ref', q: XY) {
+  const t = hand.value[i]
+  if (!t) return
+  hand.value[i] = side === 'art' ? { ...t, art: q } : { ...t, ll: fromBase(mainFrame.value, q[0], -q[1]) }
+}
+
+// Dragging a hand tie: held where it was pressed (it doesn't jump to the pointer), the fit (and
+// the borders and pins drawn with it) redone once a frame as it moves
+let grab: { i: number; side: 'art' | 'ref'; dx: number; dy: number } | undefined
+let grabTo: XY | undefined
+let grabFrame = 0
+function dragTies(side: 'art' | 'ref', k: () => number) {
+  return {
+    onDragStart: (p: XY) => {
+      if (tool.value !== 'tie') return false
+      const i = nearHand(p, k(), side)
+      if (i < 0) return false
+      const t = hand.value[i]!
+      const q = side === 'art' ? t.art : refPoint(t.ll)
+      grab = { i, side, dx: q[0] - p[0], dy: q[1] - p[1] }
+      selected.value = i
+      pending.value = {}
+      return true
+    },
+    onDrag: (p: XY) => {
+      if (!grab) return
+      grabTo = [p[0] + grab.dx, p[1] + grab.dy]
+      grabFrame ||= requestAnimationFrame(() => {
+        grabFrame = 0
+        if (grab && grabTo) moveTie(grab.i, grab.side, grabTo)
+      })
+    },
+    onDragEnd: () => {
+      if (grab && grabTo) moveTie(grab.i, grab.side, grabTo)
+      grab = grabTo = undefined
+    },
+  }
+}
+
 const artPZ = usePanZoom(artEl, {
+  ...dragTies('art', () => artPZ.view.value.k),
   content: () => art.value && { x0: 0, y0: 0, w: art.value.width, h: art.value.height },
   maxZoom: 40,
   rectMode: () => tool.value === 'part-art',
@@ -199,6 +241,7 @@ const artPZ = usePanZoom(artEl, {
 })
 
 const refPZ = usePanZoom(refEl, {
+  ...dragTies('ref', () => refPZ.view.value.k),
   content: () => (refData.value ? refMap.value.box : undefined),
   maxZoom: 60,
   rectMode: () => tool.value === 'part-ref',
@@ -260,6 +303,15 @@ function onKey(e: KeyboardEvent) {
   } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected.value !== undefined) {
     e.preventDefault()
     removeSelected()
+  } else if (e.key.startsWith('Arrow') && selected.value !== undefined) {
+    // Nudge the selected tie a screen pixel (ten with Shift): on the art, or on the real map with Alt
+    e.preventDefault()
+    const side = e.altKey ? 'ref' : 'art'
+    const t = hand.value[selected.value]!
+    const step = (e.shiftKey ? 10 : 1) / (side === 'art' ? artPZ.view.value.k : refPZ.view.value.k)
+    const [dx, dy] = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key] ?? [0, 0]
+    const q = side === 'art' ? t.art : refPoint(t.ll)
+    moveTie(selected.value, side, [q[0] + dx! * step, q[1] + dy! * step])
   } else if (e.key === 'z' && (e.metaKey || e.ctrlKey) && hand.value.length) {
     e.preventDefault()
     hand.value.pop()
@@ -403,6 +455,9 @@ const status = computed(() => {
   if (tool.value === 'part-ref') return 'Now drag a rectangle round the same part on the real map.'
   if (pending.value.art) return 'Now click the same place on the real map.'
   if (pending.value.ll) return 'Now click the same place on the art.'
+  if (selected.value !== undefined) {
+    return `Tie ${selected.value + 1}: drag it on either map, or nudge it with the arrow keys (on the real map with ⌥ / Alt, ten times with ⇧). Delete removes it.`
+  }
   if (handInMain.value < 3) return `Click a place on the art, then the same place on the real map (${handInMain.value} of 3 to start).`
   const r = result.value
   const n = `${hand.value.length} hand ties${auto.value.length ? ` + ${auto.value.length} automatic` : ''}`
@@ -415,6 +470,7 @@ const scale = (pz: { view: Ref<{ k: number }> }) => 1 / pz.view.value.k
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
+  cancelAnimationFrame(grabFrame)
   if (art.value) URL.revokeObjectURL(art.value.image)
 })
 </script>
@@ -648,6 +704,10 @@ onBeforeUnmount(() => {
   fill: #ffffff;
   stroke: #3a5bd9;
   stroke-width: 2;
+}
+
+.tie circle {
+  cursor: grab;
 }
 
 .tie text {
