@@ -211,8 +211,16 @@ export function inRing(p: XY, ring: Ring): boolean {
 /** Even-odd over all rings, so holes count */
 export const inRings = (p: XY, rings: Ring[]) => rings.reduce((a, r) => (inRing(p, r) ? !a : a), false)
 
-function nearestOnRings(p: XY, rings: Ring[]): { q: XY; d: number } {
-  let best = { q: p, d: Infinity }
+/** Area of a ring (shoelace) */
+export function ringArea(ring: Ring): number {
+  let a = 0
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += ring[j]![0] * ring[i]![1] - ring[i]![0] * ring[j]![1]
+  return Math.abs(a) / 2
+}
+
+/** The nearest point on any ring, how far, and the area of the ring it's on (its island) */
+function nearestOnRings(p: XY, rings: Ring[]): { q: XY; d: number; area: number } {
+  let best = { q: p, d: Infinity, area: 0 }
   for (const ring of rings) {
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
       const a = ring[j]!
@@ -222,7 +230,7 @@ function nearestOnRings(p: XY, rings: Ring[]): { q: XY; d: number } {
       const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)))
       const q: XY = [a[0] + t * dx, a[1] + t * dy]
       const d = Math.hypot(p[0] - q[0], p[1] - q[1])
-      if (d < best.d) best = { q, d }
+      if (d < best.d) best = { q, d, area: ringArea(ring) }
     }
   }
   return best
@@ -364,18 +372,29 @@ export class FreehandProjection {
   }
 }
 
+/** How far a small country's capital is pulled onto its dot */
+const DOT_SNAP = 3
+
 /**
  * A pin's spot: where the spline puts it, then (if that's just outside the region it belongs in,
- * as it can be by a thinned coast) moved onto the region's art, a little way in.
+ * as it can be by a thinned coast) moved onto the region's art, a little way in. maxSnap may be a
+ * function of the area of the island it would land on, so small islands can be left alone.
  */
-export function placePin(raw: XY, art: Ring[] | undefined, dot: XY | undefined, maxSnap: number, inset: number): Placed {
+export function placePin(
+  raw: XY,
+  art: Ring[] | undefined,
+  dot: XY | undefined,
+  maxSnap: number | ((islandArea: number) => number),
+  inset: number,
+): Placed {
   if (dot) {
     const d = Math.hypot(raw[0] - dot[0], raw[1] - dot[1])
-    return d < maxSnap && d > 0.5 ? { xy: dot, raw, snapped: true } : { xy: raw, raw, snapped: false }
+    const max = typeof maxSnap === 'number' ? maxSnap : DOT_SNAP
+    return d < max && d > 0.5 ? { xy: dot, raw, snapped: true } : { xy: raw, raw, snapped: false }
   }
   if (!art || inRings(raw, art)) return { xy: raw, raw, snapped: false }
-  const { q, d } = nearestOnRings(raw, art)
-  if (d > maxSnap) return { xy: raw, raw, snapped: false }
+  const { q, d, area } = nearestOnRings(raw, art)
+  if (d > (typeof maxSnap === 'number' ? maxSnap : maxSnap(area))) return { xy: raw, raw, snapped: false }
   const ux = (q[0] - raw[0]) / (d || 1)
   const uy = (q[1] - raw[1]) / (d || 1)
   const xy: XY = [q[0] + ux * inset, q[1] + uy * inset]

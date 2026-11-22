@@ -47,19 +47,23 @@ type Loaded = {
   rasters: Partial<Record<Raster, Promise<string>>> // warped, by raster
 }
 
-// snap: how far (art units) a pin just off its region's art is moved onto it; only a hair, to cover
-// a coast the designer smoothed, not to drag a pin in from the sea
-type Settings = { pin: number; snap: number; grid: number; step: number; lng: [number, number]; lat: [number, number] }
+// snap: how far (art units) a pin just off its region's art is moved onto it, to cover a coast the
+// designer smoothed. Small islands (under BIG_ISLAND art units²) aren't adjusted at all; a big
+// island pulls a pin in from up to SNAP_BIG, not further, so no pin is dragged in from the sea.
+const BIG_ISLAND = 400
+const SNAP_BIG = 15
+const snapFor = (area: number) => (area >= BIG_ISLAND ? SNAP_BIG : 0)
+type Settings = { pin: number; snap: (islandArea: number) => number; grid: number; step: number; lng: [number, number]; lat: [number, number] }
 // Blue Marble: the grid it's warped on (degrees), and its pixels per art unit
 type Warp = { lng: [number, number]; lat: [number, number]; step: number; scale: number }
 const SETTINGS: Record<MapMode, Settings & { warp: Warp }> = {
   japan: {
-    pin: 0.72, snap: 3, grid: 1, step: 0.05, lng: [122, 150], lat: [23, 46],
+    pin: 0.72, snap: snapFor, grid: 1, step: 0.05, lng: [122, 150], lat: [23, 46],
     warp: { lng: [121.5, 150.5], lat: [22.5, 46.5], step: 0.08, scale: 2.5 },
   },
   // Parallels run from the cut at 30°W round to it again, so they don't jump across the map
   world: {
-    pin: 0.55, snap: 3, grid: 15, step: 0.5, lng: [-30, 330], lat: [-60, 75],
+    pin: 0.55, snap: snapFor, grid: 15, step: 0.5, lng: [-30, 330], lat: [-60, 75],
     warp: { lng: [-30, 330], lat: [-60, 85], step: 1, scale: 2.5 },
   },
 }
