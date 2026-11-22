@@ -218,9 +218,8 @@ export function ringArea(ring: Ring): number {
   return Math.abs(a) / 2
 }
 
-/** The nearest point on any ring, how far, and the area of the ring it's on (its island) */
-function nearestOnRings(p: XY, rings: Ring[]): { q: XY; d: number; area: number } {
-  let best = { q: p, d: Infinity, area: 0 }
+function nearestOnRings(p: XY, rings: Ring[]): { q: XY; d: number } {
+  let best = { q: p, d: Infinity }
   for (const ring of rings) {
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
       const a = ring[j]!
@@ -230,7 +229,7 @@ function nearestOnRings(p: XY, rings: Ring[]): { q: XY; d: number; area: number 
       const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)))
       const q: XY = [a[0] + t * dx, a[1] + t * dy]
       const d = Math.hypot(p[0] - q[0], p[1] - q[1])
-      if (d < best.d) best = { q, d, area: ringArea(ring) }
+      if (d < best.d) best = { q, d }
     }
   }
   return best
@@ -372,29 +371,24 @@ export class FreehandProjection {
   }
 }
 
-/** How far a small country's capital is pulled onto its dot */
-const DOT_SNAP = 3
-
 /**
  * A pin's spot: where the spline puts it, then (if that's just outside the region it belongs in,
- * as it can be by a thinned coast) moved onto the region's art, a little way in. maxSnap may be a
- * function of the area of the island it would land on, so small islands can be left alone.
+ * as it can be by a thinned coast) moved onto the region's art, a little way in.
  */
 export function placePin(
   raw: XY,
   art: Ring[] | undefined,
   dot: XY | undefined,
-  maxSnap: number | ((islandArea: number) => number),
+  maxSnap: number,
   inset: number,
 ): Placed {
   if (dot) {
     const d = Math.hypot(raw[0] - dot[0], raw[1] - dot[1])
-    const max = typeof maxSnap === 'number' ? maxSnap : DOT_SNAP
-    return d < max && d > 0.5 ? { xy: dot, raw, snapped: true } : { xy: raw, raw, snapped: false }
+    return d < maxSnap && d > 0.5 ? { xy: dot, raw, snapped: true } : { xy: raw, raw, snapped: false }
   }
   if (!art || inRings(raw, art)) return { xy: raw, raw, snapped: false }
-  const { q, d, area } = nearestOnRings(raw, art)
-  if (d > (typeof maxSnap === 'number' ? maxSnap : maxSnap(area))) return { xy: raw, raw, snapped: false }
+  const { q, d } = nearestOnRings(raw, art)
+  if (d > maxSnap) return { xy: raw, raw, snapped: false }
   const ux = (q[0] - raw[0]) / (d || 1)
   const uy = (q[1] - raw[1]) / (d || 1)
   const xy: XY = [q[0] + ux * inset, q[1] + uy * inset]
@@ -439,3 +433,11 @@ export function graticule(proj: FreehandProjection, lng: [number, number], lat: 
 
 export const fmtLngLat = (lng: number, lat: number) =>
   `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lng).toFixed(4)}° ${lng >= 0 ? 'E' : 'W'}`
+
+/**
+ * The area (square degrees) of the real island or landmass a place stands on, 0 if it's on none
+ * (the sea, or a coast too fine for the data). Used to leave small islands where they fall.
+ */
+export function islandAreaAt(ll: XY, realRings: Ring[]): number {
+  return Math.max(0, ...realRings.filter((r) => inRing(ll, r)).map(ringArea))
+}
