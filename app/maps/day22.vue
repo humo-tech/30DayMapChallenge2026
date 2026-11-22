@@ -13,6 +13,7 @@ import {
   fmtLngLat,
   graticule as gridLines,
   inRings,
+  islandAreaAt,
   parsePath,
   placePin,
   toPath,
@@ -48,22 +49,20 @@ type Loaded = {
 }
 
 // snap: how far (art units) a pin just off its region's art is moved onto it, to cover a coast the
-// designer smoothed. Small islands (under BIG_ISLAND art units²) aren't adjusted at all; a big
-// island pulls a pin in from up to SNAP_BIG, not further, so no pin is dragged in from the sea.
-const BIG_ISLAND = 400
-const SNAP_BIG = 15
-const snapFor = (area: number) => (area >= BIG_ISLAND ? SNAP_BIG : 0)
-type Settings = { pin: number; snap: (islandArea: number) => number; grid: number; step: number; lng: [number, number]; lat: [number, number] }
+// designer smoothed. Only for a pin on a big island, judged by the real island it stands on
+// (bigIsland, square degrees); a small island's pin stays where the spline puts it, even beside a
+// big island's art, so it isn't pulled in from the sea.
+type Settings = { pin: number; snap: number; bigIsland: number; grid: number; step: number; lng: [number, number]; lat: [number, number] }
 // Blue Marble: the grid it's warped on (degrees), and its pixels per art unit
 type Warp = { lng: [number, number]; lat: [number, number]; step: number; scale: number }
 const SETTINGS: Record<MapMode, Settings & { warp: Warp }> = {
   japan: {
-    pin: 0.72, snap: snapFor, grid: 1, step: 0.05, lng: [122, 150], lat: [23, 46],
+    pin: 0.72, snap: 15, bigIsland: 0.05, grid: 1, step: 0.05, lng: [122, 150], lat: [23, 46],
     warp: { lng: [121.5, 150.5], lat: [22.5, 46.5], step: 0.08, scale: 2.5 },
   },
   // Parallels run from the cut at 30°W round to it again, so they don't jump across the map
   world: {
-    pin: 0.55, snap: snapFor, grid: 15, step: 0.5, lng: [-30, 330], lat: [-60, 75],
+    pin: 0.55, snap: 15, bigIsland: 0.5, grid: 15, step: 0.5, lng: [-30, 330], lat: [-60, 75],
     warp: { lng: [-30, 330], lat: [-60, 85], step: 1, scale: 2.5 },
   },
 }
@@ -111,6 +110,12 @@ const { view, size, viewBox, fit } = pz
 
 const cache = new Map<MapMode, Promise<Loaded>>()
 
+/** How far a pin may be pulled onto land: not at all if it's on a small island */
+function snapAt(ll: XY, region: string, s: Settings, rings: Map<string, Ring[]>): number {
+  const real = rings.get(region)
+  return real && islandAreaAt(ll, real) >= s.bigIsland ? s.snap : 0
+}
+
 async function load(m: MapMode): Promise<Loaded> {
   const [data, svgText] = await Promise.all([
     fetch(`${dataURL}/${m}.json`).then((r) => r.json() as Promise<MapData>),
@@ -124,20 +129,20 @@ async function load(m: MapMode): Promise<Loaded> {
   const dots = new Map<string, XY>()
   svg.querySelectorAll('#land circle').forEach((c) => dots.set(c.id, [Number(c.getAttribute('cx')), Number(c.getAttribute('cy'))]))
 
+  const realRings = new Map(data.regions.map((r) => [r.id, decodeRings(r.rings, data.quantum)]))
   const proj = new FreehandProjection(data)
   const s = SETTINGS[m]
   const pins = data.pins
     .map((p) => {
       const raw = proj.project(p.lng, p.lat)
       if (!raw) return null
-      const placed = placePin(raw, artRings.get(p.region), dots.get(p.region), s.snap, 1)
+      const placed = placePin(raw, artRings.get(p.region), dots.get(p.region), dots.has(p.region) ? 3 : snapAt([p.lng, p.lat], p.region, s, realRings), 1)
       return { ...placed, name: p.name, lng: p.lng, lat: p.lat, order: 0 }
     })
     .filter((p) => p !== null)
   // They drop in from north to south
   ;[...pins].sort((a, b) => a.xy[1] - b.xy[1]).forEach((p, i) => (p.order = i))
 
-  const realRings = new Map(data.regions.map((r) => [r.id, decodeRings(r.rings, data.quantum)]))
   return { data, art: svg.innerHTML, proj, artRings, dots, realRings, pins, rasters: {} }
 }
 
@@ -277,7 +282,7 @@ function pickAt(lng: number, lat: number) {
   if (raw) {
     const region = [...l.realRings].find(([, rings]) => inRings([lng, lat], rings))?.[0]
     const s = SETTINGS[mapMode.value]
-    xy = placePin(raw, region ? l.artRings.get(region) : undefined, region ? l.dots.get(region) : undefined, s.snap, 1).xy
+    xy = placePin(raw, region ? l.artRings.get(region) : undefined, region ? l.dots.get(region) : undefined, region ? (l.dots.has(region) ? 3 : snapAt([lng, lat], region, s, l.realRings)) : 0, 1).xy
     // Bring it into view if it's off the edge
     const [sx, sy] = pz.toScreen(xy)
     const { w, h } = size.value
