@@ -70,8 +70,8 @@ const FALL_S = 0.55
 const LEAVE_S = 0.5
 // Plan y (km) of 30.5°N, below which the camera doesn't try to fit the islands in
 const SOUTH = -610
-// Cycling through the kinds until someone picks one (s per kind)
-const CYCLE_S = 9
+// Cycling through the kinds until someone picks one: how long (s) a showing holds once its heaps are down
+const CYCLE_S = 3
 
 // Region tints of the puzzle pieces (light woods), by prefecture code
 const REGION_TINT: [number, string][] = [
