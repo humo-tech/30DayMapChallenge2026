@@ -66,7 +66,7 @@ const DEFAULTS = {
 }
 
 /** Mip levels of the bloom's blur, from half the screen down */
-const BLOOM_LEVELS = 6
+export const BLOOM_LEVELS = 6
 
 // The Navara version's vertex shader, with "up" as +z and each cell's own Mercator scale
 const prismVertexShader = /* glsl */ `
@@ -143,7 +143,7 @@ const glowVertexShader = /* glsl */ `
 `
 
 // Full-screen passes: one triangle over the whole target
-const passVertexShader = /* glsl */ `
+export const passVertexShader = /* glsl */ `
   varying vec2 vUv;
   void main() {
     vUv = position.xy * 0.5 + 0.5;
@@ -152,7 +152,7 @@ const passVertexShader = /* glsl */ `
 `
 
 // The bright parts, at half size (a 4-tap box, so nothing twinkles away between pixels)
-const brightFragmentShader = /* glsl */ `
+export const brightFragmentShader = /* glsl */ `
   uniform sampler2D tInput;
   uniform vec2 uTexel;
   uniform float uThreshold;
@@ -166,7 +166,7 @@ const brightFragmentShader = /* glsl */ `
 `
 
 // Down the chain: 13 taps (as Call of Duty's / the postprocessing library's)
-const downFragmentShader = /* glsl */ `
+export const downFragmentShader = /* glsl */ `
   uniform sampler2D tInput;
   uniform vec2 uTexel;
   varying vec2 vUv;
@@ -181,7 +181,7 @@ const downFragmentShader = /* glsl */ `
 `
 
 // Back up: a 9-tap tent over the level below, mixed with this level's own by the radius
-const upFragmentShader = /* glsl */ `
+export const upFragmentShader = /* glsl */ `
   uniform sampler2D tInput;
   uniform sampler2D tSupport;
   uniform vec2 uTexel;
@@ -199,7 +199,7 @@ const upFragmentShader = /* glsl */ `
 // Onto the map: the prisms (premultiplied: the pools have no alpha, they only add light) and the
 // bloom over them. The colors are linear, as in Navara, which encodes its frame for the screen at
 // the end; MapLibre draws straight to the screen, so this does it
-const compositeFragmentShader = /* glsl */ `
+export const compositeFragmentShader = /* glsl */ `
   uniform sampler2D tScene;
   uniform sampler2D tBloom;
   uniform float uStrength;
