@@ -84,6 +84,9 @@ scripts/.venv/bin/python scripts/day01/extract_tottori.py   # --release 2026-10-
 | `scripts/day21/fetch_diffs.py --cache <dir>` | OpenStreetMap's daily replication diffs (osmChange, every edit worldwide in a UTC day) for 2025-11-01 – 2026-10-31: 365 files, about 31 GB, kept outside the repository |
 | `scripts/day21/count_edits.py --cache <dir> --out <dir>` | Every node in each diff (created / modified / deleted, at its position) counted on fine grids by UTC hour: Japan's 0.005° cells and the world's 0.05° cells, one `.npz` per day |
 | `scripts/day21/pack_edits.py --counts <dir>` | The counts coarsened to points for the zoomed-out views — Japan (inside a rough outline) on 0.01° cells per hour, the world on 0.25° cells per day — sorted by time and gzipped → `public/data/day21/japan.bin`, `world.bin` (+ `.json` with the grid and daily totals) |
+| `scripts/day24/infer_flows.py <area> <day>` | HELLO CYCLING rides guessed from the GBFS `station_status` 5-minute snapshots on S3 (bikes in docks stepping down at one station and up at another): the transport problem solved 40 times over random assumptions and averaged, and the doubly constrained gravity model (Sinkhorn) → `scripts/.cache/day24/flows_<area>_<day>_<method>.json` (+ a preview image) |
+| `scripts/day24/export_flows.py <area> <day> ...` | The guessed flows with an end in the map's box, by hour of leaving, as 8-byte records, and each station's bikes in docks per 5 minutes → `public/data/day24/<area>.json`, `<area>_<day>_<method>.bin`, `<area>_<day>_docked.bin` |
+| `scripts/day24/fetch_rain.py <day> ...` | JMA's 10-minute precipitation at AMeDAS Chiba for those days → `public/data/day24/rain.json` |
 
 ## Deployment (GitHub Pages)
 

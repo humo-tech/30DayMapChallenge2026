@@ -23,4 +23,5 @@ export const SUBTITLES: Partial<Record<number, string>> = {
   21: 'A Year of OSM Edits',
   22: 'The Freehand Projection',
   23: 'A Taste of Autumn',
+  24: 'Where the Bikes Went, Probably',
 }
