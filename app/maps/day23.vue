@@ -34,10 +34,10 @@ const NAMES: Record<FruitKey, [string, string]> = {
   kansho: ['Sweet potato', 'Sweet potatoes'],
 }
 // Tonnes per piece: one scale for all of them together, and one per kind on its own, set by eye
-// so no kind looks scarce or swamped next to the others (persimmons and pears, round and big,
-// read as more than their count: about half as many as the rest)
+// so no kind looks scarce or swamped next to the others (persimmons, pears and bunches of grapes,
+// big and round, read as more than their count: about half as many as the rest)
 const UNIT_ALL = 500
-const UNIT: Record<FruitKey, number> = { ringo: 400, kaki: 200, nashi: 200, budou: 100, kuri: 10, kansho: 500 }
+const UNIT: Record<FruitKey, number> = { ringo: 400, kaki: 200, nashi: 200, budou: 200, kuri: 10, kansho: 500 }
 const MODES: Mode[] = ['all', ...FRUIT_KEYS]
 
 // km per model unit: a piece is ~16 km across
