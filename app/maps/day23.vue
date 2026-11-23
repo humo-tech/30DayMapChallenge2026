@@ -33,10 +33,10 @@ const NAMES: Record<FruitKey, [string, string]> = {
   kuri: ['Chestnut', 'Chestnuts'],
   kansho: ['Sweet potato', 'Sweet potatoes'],
 }
-// Tonnes per piece: one scale for all of them together, and one per kind on its own (so the
-// biggest heap of each is a few hundred pieces)
+// Tonnes per piece: one scale for all of them together, and one per kind on its own, set so each
+// kind comes to about the same number of pieces nationwide (1,200-1,500), whatever its tonnage
 const UNIT_ALL = 500
-const UNIT: Record<FruitKey, number> = { ringo: 1000, kaki: 100, nashi: 50, budou: 100, kuri: 10, kansho: 500 }
+const UNIT: Record<FruitKey, number> = { ringo: 400, kaki: 100, nashi: 100, budou: 100, kuri: 10, kansho: 500 }
 const MODES: Mode[] = ['all', ...FRUIT_KEYS]
 
 // km per model unit: a piece is ~16 km across
