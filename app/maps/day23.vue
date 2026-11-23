@@ -2,7 +2,7 @@
 // Day 23: Senses: Taste — autumn's flavours heaped on Japan itself: each prefecture's 2025 crop of
 // apples, persimmons, pears, grapes, chestnuts and sweet potatoes, one piece of fruit per so many
 // tonnes shipped, dropped onto it in the low sun of an October afternoon. Navara: the prefectures
-// as matte stone slabs on a light world map under the sky, lit like food on a table (the sun
+// as matte stone slabs on a light world map under a clear autumn sky, lit like food on a table (the sun
 // low, a cool fill), the sun's cascaded shadows off the heaps telling one prefecture's from the
 // next, and ambient occlusion in their hollows. It renders only while something moves. (The same in plain
 // Three.js, on a wooden jigsaw of Japan: the hidden page /day/23-three.)
@@ -13,6 +13,7 @@ import { TileJsonPlugin } from '@navaramap/three-plugins'
 import { FRUIT_KEYS, makeFruits, type Fruit, type FruitKey } from './lib/harvestFruits'
 import { buildHeaps, landOf, prefAt, type Placement, type Ring } from './lib/harvestHeaps'
 import { HarvestHeapsMeshDesc, type HarvestHeapsConfig } from './lib/HarvestHeapsMeshDesc'
+import { AutumnSkyMeshDesc, type AutumnSkyConfig } from './lib/AutumnSkyMeshDesc'
 import { HarvestLandMeshDesc, type HarvestLandConfig } from './lib/HarvestLandMeshDesc'
 import { toPlan } from './lib/japanLcc'
 import { Color as ThreeColor, Vector3 } from 'three'
@@ -47,7 +48,12 @@ const DATE = new Date('2025-10-25T04:30:00Z')
 const CYCLE_S = 9
 // A quiet backdrop for the fruit: a light world map under the sky, Japan in pale stone; the sun's
 // colour from the atmosphere, the fill cool
-const BACKGROUND = '#08090b'
+const BACKGROUND = '#cfe2f3'
+// Behind the globe, a clear autumn sky rather than space: deep blue fading to a pale haze at the
+// Earth's rim, thin high cloud across it
+const SKY = { horizon: '#d8e8f4', zenith: '#2c6ccc', cloud: '#ffffff' }
+// How far below the level the rim of the Earth looks from the camera's height (~900 km up)
+const RIM_DIP = 0.5
 const EXPOSURE = 2.2
 const LAND = '#b5a892'
 // The prefectures' slabs, thick enough to stand up off the map; the grooves between them (2.4 km,
@@ -109,7 +115,7 @@ function cameraFor(aspect: number) {
   const t = Math.min(1, Math.max(0, (1.3 - aspect) / 0.7))
   const lerp = (a: number, b: number) => a + (b - a) * t
   const bearing = (lerp(150, 215) * Math.PI) / 180 // from the target to the camera
-  const up = (lerp(40, 44) * Math.PI) / 180
+  const up = (lerp(34, 40) * Math.PI) / 180
   const dist = lerp(1_380_000, 2_500_000)
   const offset = new Vector3(Math.sin(bearing) * Math.cos(up), Math.cos(bearing) * Math.cos(up), Math.sin(up)).multiplyScalar(dist)
   return { target: { lng: lerp(137.1, 136.0), lat: lerp(36.3, 35.6), height: 0 }, offset }
@@ -139,14 +145,24 @@ onMounted(async () => {
   if (view !== v) return // unmounted while initializing
   v.registerMesh('harvestHeaps', HarvestHeapsMeshDesc)
   v.registerMesh('harvestLand', HarvestLandMeshDesc)
+  v.registerMesh('autumnSky', AutumnSkyMeshDesc)
   v.atmosphere.date = DATE
 
   // Navara's sky, sun and stars. From this far off the atmosphere's haze would wash the fruit
   // out: keep the sky, drop the haze. The sun's shadows reach across the whole of Japan (3
   // cascades are enough at this distance); a cool fill; ambient occlusion between the pieces
   const scene = plugin.addDefaultPhotorealScene()
+  // Its sky is black space from up here: swap it (and the stars) for the autumn one
+  scene.sky.delete()
+  scene.stars.delete()
+  const skyConfig: AutumnSkyConfig = {
+    autumnSky: { horizon: new ThreeColor(SKY.horizon), zenith: new ThreeColor(SKY.zenith), cloud: new ThreeColor(SKY.cloud), dip: RIM_DIP },
+    geodetic: { lng: 137, lat: 36, height: 0 },
+  }
+  v.addMesh<AutumnSkyMeshDesc>(skyConfig)
   v.toneMappingExposure = EXPOSURE
-  scene.aerialPerspective.update({ aerialPerspective: { inscatter: false } })
+  // (and its reddening at the Earth's rim, which against a blue sky reads as sunset)
+  scene.aerialPerspective.update({ aerialPerspective: { inscatter: false, transmittance: false } })
   scene.sun.update({
     sun: {
       intensity: SUN_INTENSITY,
