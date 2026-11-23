@@ -5,14 +5,16 @@ import { NAVARA_PAGES } from './app/data/navara'
 
 // Navara loads its workers via `new URL('assets/...', import.meta.url)` in pre-built
 // code, which Vite neither rewrites nor emits. Copy them next to the chunks, where
-// those URLs resolve. The data subdirectories (atmosphere, clouds, ...) are skipped:
-// they are only needed by the photoreal sky / stars / clouds descriptors, which the
-// maps avoid for their size (~8 MB for the atmosphere alone).
+// those URLs resolve. Of the data subdirectories, only the atmosphere's tables (the
+// .exr ones, ~9.6 MB, and the stars) and the blue noise go along, for Day 23's sky; the
+// other maps avoid the photoreal sky for its size. Clouds and the .bin copies are skipped.
 const NAVARA_ASSETS = 'node_modules/@navaramap/three/dist/assets'
+const NAVARA_DATA = [/^atmosphere(\/([^/]+\.exr|stars\.bin))?$/, /^noise(\/[^/]+\.bin)?$/]
 
 function isNavaraAssetUsed(src: string): boolean {
   const path = relative(NAVARA_ASSETS, src)
   if (path === '') return true
+  if (NAVARA_DATA.some((re) => re.test(path))) return true
   return !path.includes('/') && !path.endsWith('.map') && statSync(src).isFile()
 }
 
@@ -45,13 +47,15 @@ export default defineNuxtConfig({
   nitro: {
     preset: 'github-pages',
     prerender: {
-      // Prerender all 30 day pages, the bare Navara showcase pages, and Days 12 and 20 on MapLibre
+      // Prerender all 30 day pages, the bare Navara showcase pages, Days 12 and 20 on MapLibre and
+      // Day 23 in plain Three.js
       routes: [
         '/',
         ...THEMES.map((t) => `/day/${t.day}`),
         ...Object.keys(NAVARA_PAGES).map((slug) => `/navara/${slug}`),
         '/day/12-maplibre',
         '/day/20-maplibre',
+        '/day/23-three',
       ],
     },
   },
