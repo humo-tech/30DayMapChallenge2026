@@ -28,7 +28,10 @@ const PATHS = { 22: '/day/22?compare=off&ties=on&real=on', 23: '/day/23?flavour=
 const days = args.length ? args.map(Number) : Array.from({ length: 30 }, (_, i) => i + 1)
 
 mkdirSync('app/assets/thumbs', { recursive: true })
-const browser = await chromium.launch({ channel: process.env.PW_CHANNEL, args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] })
+// Software GL by default; PW_GL=gpu draws on the GPU instead (heavy scenes, e.g. Day 25, lose
+// their WebGL context in SwiftShader)
+const glArgs = process.env.PW_GL === 'gpu' ? ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] : ['--use-gl=swiftshader', '--enable-unsafe-swiftshader']
+const browser = await chromium.launch({ channel: process.env.PW_CHANNEL, args: [...glArgs, '--no-sandbox'] })
 // Exactly twice the thumbnail, so it halves cleanly
 const page = await browser.newPage({ viewport: { width: THUMB_W * 2, height: THUMB_H * 2 } })
 
