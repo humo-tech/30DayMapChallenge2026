@@ -21,8 +21,9 @@ const baseURL = useRuntimeConfig().app.baseURL
 const dataURL = `${baseURL}data/day24`
 const AREA = 'makuhari'
 
-const NAVY = '#050816'
-// The light Re:Earth Papers basemap, multiplied by a tint through the day: slate by day, navy by
+// The Re:Earth Papers basemap as a vector style (Protomaps tiles); the layer tints it
+const PAPERS_STYLE = 'https://papers.reearth.land/styles/papers-light/style.json'
+// The light Papers basemap, multiplied by a tint through the day: slate by day, navy by
 // night, warm for a while either side of sunrise and sunset (when they are, at Makuhari that day)
 // (sRGB channels, mixed here)
 const DAY_TINT = [118, 127, 143]
@@ -300,27 +301,39 @@ function frameState() {
 onMounted(async () => {
   raf = requestAnimationFrame(frame)
   const box = container.value!
-  const [m, data] = await Promise.all([
+  const [m, data, papers] = await Promise.all([
     fetch(`${dataURL}/${AREA}.json`).then((r) => r.json() as Promise<Meta>),
     fetch(`${dataURL}/rain.json`).then((r) => r.json() as Promise<{ days: Record<string, number[]> }>),
+    fetch(PAPERS_STYLE).then((r) => r.json() as Promise<maplibregl.StyleSpecification>),
   ])
   if (!container.value) return // unmounted while loading
   meta = m
   rain.value = data.days
 
+  // The basemap is vector: the Papers style's own layers (earth, water, roads, railways), with
+  // the buildings of its Protomaps tiles raised over them, a little, in the same pale grey
+  const style: maplibregl.StyleSpecification = {
+    ...papers,
+    layers: [
+      ...papers.layers,
+      {
+        id: 'buildings',
+        type: 'fill-extrusion',
+        source: 'v',
+        'source-layer': 'buildings',
+        minzoom: 13,
+        paint: {
+          'fill-extrusion-color': '#cfd3da',
+          'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
+          'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+          'fill-extrusion-opacity': 0.85,
+        },
+      },
+    ],
+  }
   const mapView = new maplibregl.Map({
     container: box,
-    style: {
-      version: 8,
-      sources: {
-        // The basemap the Navara version uses (Re:Earth Papers, light), tinted by the layer
-        papers: { type: 'raster', url: 'https://papers.reearth.land/styles/papers-light/tilejson.json', tileSize: 512 },
-      },
-      layers: [
-        { id: 'night', type: 'background', paint: { 'background-color': NAVY } },
-        { id: 'papers', type: 'raster', source: 'papers' },
-      ],
-    },
+    style,
     center: [camera.lng, camera.lat],
     zoom: zoomFor(camera.distance, camera.lat, box.clientHeight || 800),
     bearing: camera.heading,
