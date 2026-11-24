@@ -1,8 +1,6 @@
 // Day 24's network on MapLibre GL JS (Mercator only): one custom layer with a Three.js renderer on
 // the map's own GL context (as Day 20's prisms, hexPrismsLayer.ts), made of
 //
-// - the DAY AND NIGHT: a full-screen multiply over the basemap (a shader, not a paint property:
-//   MapLibre's raster layers can only brighten, desaturate or hue-shift),
 // - the GROUND: Day 24's marks (offices, homes, stations...) painted flat, and the RIPPLES rain
 //   leaves, procedural rings in a hashed grid, lit only as many as the rain is hard,
 // - the STATIONS' COLUMNS and the ARCS, the Navara version's shaders (flowArc, flowBead) as they
@@ -25,7 +23,6 @@ import {
   CylinderGeometry,
   DataTexture,
   DoubleSide,
-  DstColorFactor,
   Float32BufferAttribute,
   Group,
   HalfFloatType,
@@ -44,7 +41,6 @@ import {
   RedFormat,
   Scene,
   ShaderMaterial,
-  SrcAlphaFactor,
   UnsignedByteType,
   Vector2,
   Vector3,
@@ -72,8 +68,8 @@ import flowCommon from './shaders/flowCommon.glsl?raw'
 /** The fill's colors: filling up, emptying, holding (the page's key shows the same) */
 export const COLUMN_COLORS = { rising: '#ff8a1f', falling: '#3a86ff', steady: '#5d6474' }
 
-/** What the page says about this frame: the clock, how hard it rains (0-1), the basemap's tint (sRGB 0-1) */
-export type Day24Frame = { hours: number; wet: number; tint: [number, number, number] }
+/** What the page says about this frame: the clock, and how hard it rains (0-1) */
+export type Day24Frame = { hours: number; wet: number }
 
 export type Day24LayerOptions = {
   /** The middle of the area: where the frame's metres are measured from */
@@ -327,14 +323,6 @@ const markFragmentShader = /* glsl */ `
   }
 `
 
-// The day and night: the map multiplied by a tint
-const tintFragmentShader = /* glsl */ `
-  uniform vec3 uTint;
-  void main() {
-    gl_FragColor = vec4(uTint, 1.0);
-  }
-`
-
 export function day24Layer(options: Day24LayerOptions): Day24Layer {
   const { anchor, stations: lngLats, capacity } = options
   const n = lngLats.length
@@ -355,7 +343,6 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
   const camera = new Camera()
   camera.matrixWorldAutoUpdate = false
 
-  const tintScene = new Scene() // multiplied over the basemap
   const groundScene = new Scene() // drawn straight to the screen: marks, ripples
   const scene = new Scene() // drawn offscreen, then bloomed: columns, arcs, rain
   const arcs = new Group()
@@ -375,24 +362,8 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
   docked.minFilter = LinearFilter
   docked.needsUpdate = true
 
-  // --- Tint
-  const tint = new ShaderMaterial({
-    vertexShader: passVertexShader,
-    fragmentShader: tintFragmentShader,
-    uniforms: { uTint: { value: new Vector3(1, 1, 1) } },
-    depthTest: false,
-    depthWrite: false,
-    blending: CustomBlending,
-  })
-  tint.blendSrc = DstColorFactor
-  tint.blendDst = ZeroFactor
-  tint.blendSrcAlpha = ZeroFactor
-  tint.blendDstAlpha = OneFactor
   const triangle = new BufferGeometry()
   triangle.setAttribute('position', new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3))
-  const tintMesh = new Mesh(triangle, tint)
-  tintMesh.frustumCulled = false
-  tintScene.add(tintMesh)
 
   // --- Ground: marks (the quads' own textures) and ripples
   const heading = (options.heading * Math.PI) / 180
@@ -701,7 +672,6 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
       clock.value = f.hours
       wet.value = f.wet
       time.value = performance.now() / 1000
-      ;(tint.uniforms.uTint!.value as Vector3).set(...f.tint)
       if (map) {
         const c = map.getCenter()
         const [x, y] = toFrame(c.lng, c.lat)
@@ -725,10 +695,9 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
 
       renderer.resetState()
       resize(w, h)
-      // The map, tinted for the hour; the marks and ripples on it
+      // The marks and ripples on the map
       renderer.setRenderTarget(null)
       renderer.setViewport(0, 0, w, h)
-      renderer.render(tintScene, camera)
       renderer.render(groundScene, camera)
 
       // The columns, arcs and rain, bloomed
@@ -775,7 +744,7 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
     dispose() {
       clearArcs()
       for (const g of [triangle, rippleGeometry, columnGeometry, rainGeometry, cyl]) g.dispose()
-      for (const m of [tint, ripples, fill, shell, arcMaterial, beadMaterial, rainMaterial, bright, down, upPass, composite, ...markMaterials]) m.dispose()
+      for (const m of [ripples, fill, shell, arcMaterial, beadMaterial, rainMaterial, bright, down, upPass, composite, ...markMaterials]) m.dispose()
       for (const t of [docked, ...markTextures]) t.dispose()
       for (const t of [sceneTarget, ...downs, ...ups]) t.dispose()
       renderer?.dispose()

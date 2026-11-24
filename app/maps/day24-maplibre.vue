@@ -23,8 +23,10 @@ const AREA = 'makuhari'
 
 // The Re:Earth Papers basemap as a vector style (Protomaps tiles); the layer tints it
 const PAPERS_STYLE = 'https://papers.reearth.land/styles/papers-light/style.json'
-// The light Papers basemap, multiplied by a tint through the day: slate by day, navy by
-// night, warm for a while either side of sunrise and sunset (when they are, at Makuhari that day)
+// The light Papers basemap, its every color multiplied by a tint through the day (a global
+// state of the style, so the style does the shading, with nothing laid over it): slate by day,
+// navy by night, warm for a while either side of sunrise and sunset (when they are, at Makuhari
+// that day). Roads and rails are lifted at night, to stand out of the dark ground
 // (sRGB channels, mixed here)
 const DAY_TINT = [118, 127, 143]
 const NIGHT_TINT = [35, 43, 69]
@@ -34,6 +36,7 @@ const mix = (a: number[], b: number[], k: number) => a.map((c, i) => c + (b[i]! 
 const TWILIGHT_H = 0.7
 // How much a heavy rain dims the day (overcast)
 const RAIN_DIM = 0.35
+const ROAD_LIFT_NIGHT = 2.2
 const MAKUHARI = { lng: 140.04, lat: 35.65 }
 
 /** Sunrise and sunset (hours, JST) on `day` at `lat`/`lng` (NOAA's approximation, to a minute or two). */
@@ -165,6 +168,7 @@ let map: maplibregl.Map | undefined
 let layer: Day24Layer | undefined
 let meta: Meta | undefined
 let raf = 0
+let styled = ''
 const cache = new Map<string, Promise<Flows>>()
 const dockedCache = new Map<string, Promise<Uint8Array>>()
 
@@ -295,7 +299,63 @@ function frameState() {
   const light = ramp(t - rise) * (1 - ramp(t - set)) * (1 - RAIN_DIM * wet)
   const warm = Math.exp(-(((t - rise) / TWILIGHT_H) ** 2)) + Math.exp(-(((t - set) / TWILIGHT_H) ** 2))
   const rgb = mix(mix(NIGHT_TINT, DAY_TINT, light), TWILIGHT_TINT, 0.55 * Math.min(1, warm))
-  return { hours: t, wet, tint: rgb.map((c) => c / 255) as [number, number, number] }
+  // (set only when it changes by a shade: restyling the map is not free)
+  const tint = rgb.map((c) => Math.round(c) / 255)
+  const night = 1 - light
+  const lift = Math.round((1 + (ROAD_LIFT_NIGHT - 1) * night) * 50) / 50
+  const key = `${tint.join()}|${lift}`
+  if (map && key !== styled) {
+    styled = key
+    map.setGlobalStateProperty('tint', tint)
+    map.setGlobalStateProperty('lift', lift)
+  }
+  return { hours: t, wet }
+}
+
+/** One color of the style, times the global tint (and `extra`, a global-state number, if given) */
+function tinted(color: unknown, extra?: string): unknown {
+  const channel = (i: number) => [
+    '*',
+    ['at', i, ['var', 'c']],
+    ['number', ['at', i, ['array', 'number', 3, ['global-state', 'tint']]]],
+    ...(extra ? [['number', ['global-state', extra]]] : []),
+  ]
+  return ['let', 'c', ['to-rgba', color], ['rgb', channel(0), channel(1), channel(2)]]
+}
+
+/** The Papers vector style with its colors tinted by global state, and buildings added */
+function tintedStyle(papers: maplibregl.StyleSpecification): maplibregl.StyleSpecification {
+  const layers = [
+    ...papers.layers,
+    {
+      id: 'buildings',
+      type: 'fill-extrusion',
+      source: 'v',
+      'source-layer': 'buildings',
+      minzoom: 13,
+      paint: {
+        'fill-extrusion-color': '#cfd3da',
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 0.85,
+      },
+    },
+  ] as maplibregl.LayerSpecification[]
+  for (const layer of layers) {
+    const paint = (layer.paint ?? {}) as Record<string, unknown>
+    // (the background's zoom steps are all white where the map is looked at: one color)
+    if (layer.type === 'background') paint['background-color'] = 'rgb(255, 255, 255)'
+    const road = /^(roads|railway)_/.test(layer.id)
+    for (const [key, value] of Object.entries(paint)) {
+      if (key.endsWith('-color')) paint[key] = tinted(value, road ? 'lift' : undefined)
+    }
+    layer.paint = paint as never
+  }
+  return {
+    ...papers,
+    layers,
+    state: { tint: { default: [1, 1, 1] }, lift: { default: 1 } },
+  } as maplibregl.StyleSpecification
 }
 
 onMounted(async () => {
@@ -311,26 +371,10 @@ onMounted(async () => {
   rain.value = data.days
 
   // The basemap is vector: the Papers style's own layers (earth, water, roads, railways), with
-  // the buildings of its Protomaps tiles raised over them, a little, in the same pale grey
-  const style: maplibregl.StyleSpecification = {
-    ...papers,
-    layers: [
-      ...papers.layers,
-      {
-        id: 'buildings',
-        type: 'fill-extrusion',
-        source: 'v',
-        'source-layer': 'buildings',
-        minzoom: 13,
-        paint: {
-          'fill-extrusion-color': '#cfd3da',
-          'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
-          'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-          'fill-extrusion-opacity': 0.85,
-        },
-      },
-    ],
-  }
+  // the buildings of its Protomaps tiles raised over them, a little, in the same pale grey. Every
+  // color goes through the style's global state, `tint` (a multiplier per channel) and `lift`
+  // (more for roads), which frameState() sets as the day goes
+  const style = tintedStyle(papers)
   const mapView = new maplibregl.Map({
     container: box,
     style,
