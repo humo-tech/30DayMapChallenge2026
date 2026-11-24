@@ -710,6 +710,8 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
       wet.value = f.wet
       // As many drops as the rain is hard, and more for its heavier cells (their order is random), none when dry
       rainGeometry.instanceCount = Math.ceil(RAIN_DROPS * Math.min(1, f.wet * RAIN_BOOST))
+      // (a drizzle's drops are fainter, too)
+      rainUniforms.uBright.value = 0.3 + 0.3 * Math.sqrt(f.wet)
       rain.visible = f.wet > 0.002
       rippleMesh.visible = rain.visible
       const clockS = performance.now() / 1000
