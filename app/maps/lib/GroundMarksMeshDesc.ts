@@ -83,7 +83,7 @@ const fragmentShader = /* glsl */ `
 
 const rgba = ([r, g, b]: [number, number, number], a: number) => `rgba(${r}, ${g}, ${b}, ${a})`
 
-function paint(mark: GroundMark) {
+export function paintMark(mark: GroundMark) {
   const style = MARK_STYLES[mark.kind]
   const rx = mark.rx
   const ry = mark.ry ?? mark.rx
@@ -171,7 +171,7 @@ export class GroundMarksMeshDesc extends MeshDesc<GroundMarksConfig, GroundMarks
     const group = new Group()
     group.position.copy(a)
     for (const mark of opts.marks) {
-      const { canvas, wM, hM } = paint(mark)
+      const { canvas, wM, hM } = paintMark(mark)
       const texture = new CanvasTexture(canvas)
       texture.colorSpace = SRGBColorSpace
       texture.minFilter = LinearMipmapLinearFilter
