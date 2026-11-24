@@ -99,7 +99,11 @@ const RADIUS = 45
 const RAIN_DROPS = 24_000
 const RAIN_BOX = 7_000 // m, a side
 const RAIN_HEIGHT = 1_200 // m
-const RAIN_LEN = 45 // m
+// The heaviest cell rains this many times the average (of the buffer's drops)
+const RAIN_BOOST = 1.9
+const RAIN_LEN_PX = 22 // a streak's length on screen
+const RAIN_PX_PER_S = 900 // how fast a drop falls on screen
+const EARTH_M = 40_075_016.686
 const RIPPLE_HALF = 4_000 // m, the ground quad's half side (it follows the map's centre)
 const BLOOM = { strength: 0.6, radius: 0.45, threshold: 0.35 }
 
@@ -208,22 +212,50 @@ const rainVertexShader = /* glsl */ `
   uniform float uSize;
   uniform float uHeight;
   uniform float uLen;
-  uniform float uTime;
+  uniform float uPhase; // heights fallen
   uniform vec2 uWind; // m east and north the wind carries a drop over each m it falls
+  uniform float uWet; // 0-1
+  uniform float uCount; // drops in the buffer
+  uniform float uTime;
   uniform vec2 uResolution;
   uniform float uPixelRatio;
   varying float vA;
   varying float vSide;
 
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
+
   void main() {
-    float speed = 150.0 + 70.0 * aSeed.w;
-    float fall = fract(aSeed.z + uTime * speed / uHeight);
+    // (the phase is summed on the CPU, at a speed set by the zoom, so it stays smooth as that changes)
+    float fall = fract(aSeed.z + uPhase * (1.0 + 0.35 * aSeed.w));
     float z = uHeight * (1.0 - fall);
     // Wrapped round the centre, so the box moves with the map and no drop is made or lost
     vec2 xy = uCenter + (fract(aSeed.xy - uCenter / uSize) - 0.5) * uSize + uWind * (uHeight - z);
+    // Rain is not even: cells of heavier and lighter rain, a few km across, drifting with the
+    // wind (and a finer grain in them). A drop is drawn where its rank (its place in the buffer,
+    // so a drop is in the buffer only if the rain is hard enough somewhere) is under the local
+    // intensity, fading out over a little rank, so a drop is not cut off as a cell passes
+    vec2 q = xy / 1700.0 - uWind * uTime * 0.12;
+    float cells = vnoise(q) * 0.65 + vnoise(q * 2.7 + 11.0) * 0.35;
+    float local = 0.1 + 1.8 * smoothstep(0.32, 0.72, cells);
+    float rank = float(gl_InstanceID) / uCount;
+    float shown = 1.0 - smoothstep(0.0, 0.08, rank - uWet * local);
+    if (shown <= 0.0) {
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // off screen
+      return;
+    }
     vec3 head = vec3(xy, z);
     vec3 d = normalize(vec3(uWind, -1.0));
-    vec3 tail = head - d * uLen;
+    vec3 tail = head - d * uLen * (0.7 + 0.6 * aSeed.w);
     mat4 mvp = projectionMatrix * modelViewMatrix;
     vec4 c0 = mvp * vec4(head, 1.0);
     vec4 c1 = mvp * vec4(tail, 1.0);
@@ -234,7 +266,8 @@ const rainVertexShader = /* glsl */ `
     c.xy += vec2(-dir.y, dir.x) * aSide * (0.55 * uPixelRatio) / uResolution * c.w;
     gl_Position = c;
     // Fades in at the top, out into the ground
-    vA = (1.0 - 0.8 * aT) * smoothstep(0.0, 25.0, z) * smoothstep(0.0, 60.0, uHeight - z);
+    // (each drop its own brightness, and the denser cells a little brighter)
+    vA = shown * (0.55 + 0.45 * fract(aSeed.w * 7.31 + aSeed.x * 3.7)) * (0.75 + 0.35 * local) * (1.0 - 0.8 * aT) * smoothstep(0.0, 25.0, z) * smoothstep(0.0, 60.0, uHeight - z);
     vSide = aSide;
   }
 `
@@ -350,6 +383,9 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
   const clock = { value: 0 }
   const time = { value: 0 }
   const wet = { value: 0 }
+  // Rain: heights fallen so far
+  const phase = { value: 0 }
+  let lastTime = 0
   const resolution = { value: new Vector2(1, 1) }
   const pixelRatio = { value: 1 }
   const center = { value: new Vector2() }
@@ -587,13 +623,17 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
     g.instanceCount = RAIN_DROPS
     return g
   })()
+  const wind = { value: new Vector2(0.18, -0.08) }
   const rainUniforms = {
     uCenter: center,
     uSize: { value: RAIN_BOX },
     uHeight: { value: RAIN_HEIGHT },
-    uLen: { value: RAIN_LEN },
+    uLen: { value: 60 },
+    uPhase: phase,
+    uWet: wet,
+    uCount: { value: RAIN_DROPS },
     uTime: time,
-    uWind: { value: new Vector2(0.18, -0.08) },
+    uWind: wind,
     uResolution: resolution,
     uPixelRatio: pixelRatio,
     uBright: { value: 0.5 },
@@ -668,16 +708,28 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
       const f = options.frame()
       clock.value = f.hours
       wet.value = f.wet
-      // As many drops as the rain is hard (their order is random), none when dry
-      rainGeometry.instanceCount = Math.ceil(RAIN_DROPS * f.wet)
+      // As many drops as the rain is hard, and more for its heavier cells (their order is random), none when dry
+      rainGeometry.instanceCount = Math.ceil(RAIN_DROPS * Math.min(1, f.wet * RAIN_BOOST))
       rain.visible = f.wet > 0.002
       rippleMesh.visible = rain.visible
-      time.value = performance.now() / 1000
+      const clockS = performance.now() / 1000
+      const dt = lastTime ? Math.min(0.1, clockS - lastTime) : 0
+      lastTime = clockS
+      time.value = clockS
       if (map) {
         const c = map.getCenter()
         const [x, y] = toFrame(c.lng, c.lat)
         center.value.set(x, y)
         pixelRatio.value = map.getPixelRatio()
+        // Rain falls at a speed on screen, not in metres: about this many px a second, whatever
+        // the zoom (at the Navara framing, ~3 m a px, that is ~2 km/s: drops are a blur, not a drift)
+        const mpp = (EARTH_M * Math.cos((c.lat * Math.PI) / 180)) / (512 * 2 ** map.getZoom())
+        const speed = Math.min(2500, Math.max(120, RAIN_PX_PER_S * mpp))
+        phase.value += (dt * speed) / RAIN_HEIGHT
+        // Gusts: the wind swings a little, slowly, and a little faster over that
+        const g = clockS
+        wind.value.set(0.18 + 0.1 * Math.sin(g * 0.31) + 0.05 * Math.sin(g * 1.3 + 1), -0.08 + 0.06 * Math.sin(g * 0.23 + 2) + 0.03 * Math.sin(g * 1.1))
+        rainUniforms.uLen.value = Math.min(260, Math.max(25, RAIN_LEN_PX * mpp))
       }
     },
     render(gl, { defaultProjectionData, projectionMatrix }) {
