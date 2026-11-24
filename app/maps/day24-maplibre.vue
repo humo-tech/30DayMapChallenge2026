@@ -169,6 +169,7 @@ let layer: Day24Layer | undefined
 let meta: Meta | undefined
 let raf = 0
 let styled = ''
+let styledAt = 0
 const cache = new Map<string, Promise<Flows>>()
 const dockedCache = new Map<string, Promise<Uint8Array>>()
 
@@ -299,13 +300,16 @@ function frameState() {
   const light = ramp(t - rise) * (1 - ramp(t - set)) * (1 - RAIN_DIM * wet)
   const warm = Math.exp(-(((t - rise) / TWILIGHT_H) ** 2)) + Math.exp(-(((t - set) / TWILIGHT_H) ** 2))
   const rgb = mix(mix(NIGHT_TINT, DAY_TINT, light), TWILIGHT_TINT, 0.55 * Math.min(1, warm))
-  // (set only when it changes by a shade: restyling the map is not free)
-  const tint = rgb.map((c) => Math.round(c) / 255)
+  // Restyling the map is not free (every layer's colors are evaluated again): only when the
+  // tint has moved a few shades, and at most a few times a second
+  const tint = rgb.map((c) => Math.round(c / 3) * 3 / 255)
   const night = 1 - light
-  const lift = Math.round((1 + (ROAD_LIFT_NIGHT - 1) * night) * 50) / 50
+  const lift = Math.round((1 + (ROAD_LIFT_NIGHT - 1) * night) * 10) / 10
   const key = `${tint.join()}|${lift}`
-  if (map && key !== styled) {
+  const stamp = performance.now()
+  if (map && key !== styled && stamp - styledAt > 250) {
     styled = key
+    styledAt = stamp
     map.setGlobalStateProperty('tint', tint)
     map.setGlobalStateProperty('lift', lift)
   }

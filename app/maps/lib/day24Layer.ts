@@ -8,7 +8,7 @@
 //   here they are Web Mercator metres from the anchor (true metres at its latitude), x east,
 //   y north, z up. Both are lit with Navara's selective bloom, which this layer brings its own of
 //   (the passes are Day 20's),
-// - the RAIN: 40 000 streaks falling through a box that follows the map's centre, each a
+// - the RAIN: 24 000 streaks falling through a box that follows the map's centre, each a
 //   ribbon widened on screen, wrapped in the vertex shader so none is ever created or removed,
 //   and only as many drawn as the rain is hard.
 import { MercatorCoordinate, type CustomLayerInterface, type Map as MapLibreMap } from 'maplibre-gl'
@@ -96,11 +96,11 @@ const SLOTS = 288
 const SEGMENTS = 16 // must match flowArc.vert.glsl
 const METERS_PER_BIKE = 8
 const RADIUS = 45
-const RAIN_DROPS = 40_000
+const RAIN_DROPS = 24_000
 const RAIN_BOX = 7_000 // m, a side
 const RAIN_HEIGHT = 1_200 // m
 const RAIN_LEN = 45 // m
-const RIPPLE_HALF = 12_000 // m, the ground quad's half side
+const RIPPLE_HALF = 4_000 // m, the ground quad's half side (it follows the map's centre)
 const BLOOM = { strength: 0.6, radius: 0.45, threshold: 0.35 }
 
 // (flowCommon.glsl is shared by the arc and bead shaders: put it in by hand)
@@ -201,7 +201,7 @@ const columnFragmentShader = /* glsl */ `
 // The rain: ribbons that fall, wrap and widen on screen, all in the vertex shader
 // ---------------------------------------------------------------------------------------------
 const rainVertexShader = /* glsl */ `
-  attribute vec4 aSeed; // x, y: where in the box; z: how far down it falls; w: its rank (drawn if under uWet)
+  attribute vec4 aSeed; // x, y: where in the box; z: how far down it falls; w: its speed
   attribute float aT; // 0 at the head, 1 at the tail
   attribute float aSide; // -1 or 1 across the ribbon
   uniform vec2 uCenter; // the box's middle (m, frame)
@@ -209,7 +209,6 @@ const rainVertexShader = /* glsl */ `
   uniform float uHeight;
   uniform float uLen;
   uniform float uTime;
-  uniform float uWet;
   uniform vec2 uWind; // m east and north the wind carries a drop over each m it falls
   uniform vec2 uResolution;
   uniform float uPixelRatio;
@@ -217,11 +216,7 @@ const rainVertexShader = /* glsl */ `
   varying float vSide;
 
   void main() {
-    if (aSeed.w > uWet) {
-      gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // off screen: dry
-      return;
-    }
-    float speed = 150.0 + 70.0 * fract(aSeed.w * 91.7);
+    float speed = 150.0 + 70.0 * aSeed.w;
     float fall = fract(aSeed.z + uTime * speed / uHeight);
     float z = uHeight * (1.0 - fall);
     // Wrapped round the centre, so the box moves with the map and no drop is made or lost
@@ -257,10 +252,11 @@ const rainFragmentShader = /* glsl */ `
 // The ground: ripples where the drops land
 // ---------------------------------------------------------------------------------------------
 const rippleVertexShader = /* glsl */ `
+  uniform vec2 uCenter;
   varying vec2 vXY;
   void main() {
-    vXY = position.xy;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vXY = position.xy + uCenter;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position + vec3(uCenter, 0.0), 1.0);
   }
 `
 const rippleFragmentShader = /* glsl */ `
@@ -269,7 +265,7 @@ const rippleFragmentShader = /* glsl */ `
   uniform vec2 uCenter;
   varying vec2 vXY;
   const float CELL = 34.0; // m
-  const float REACH = 24.0; // m a ring spreads to
+  const float REACH = 16.0; // m a ring spreads to: within the cell's half, so 4 cells are enough
 
   float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -285,9 +281,11 @@ const rippleFragmentShader = /* glsl */ `
     if (fade * near * uWet <= 0.0) discard;
     vec2 cell = floor(vXY / CELL);
     float sum = 0.0;
-    for (int j = -1; j <= 1; j++) {
-      for (int i = -1; i <= 1; i++) {
-        vec2 id = cell + vec2(float(i), float(j));
+    // (the 2 x 2 cells nearest the pixel: a ring reaches no further than half a cell)
+    vec2 nearer = step(0.5, fract(vXY / CELL)) * 2.0 - 1.0;
+    for (int j = 0; j <= 1; j++) {
+      for (int i = 0; i <= 1; i++) {
+        vec2 id = cell + vec2(float(i), float(j)) * nearer;
         float rank = hash(id);
         if (rank > uWet) continue;
         float h2 = hash(id + 7.3);
@@ -595,7 +593,6 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
     uHeight: { value: RAIN_HEIGHT },
     uLen: { value: RAIN_LEN },
     uTime: time,
-    uWet: wet,
     uWind: { value: new Vector2(0.18, -0.08) },
     uResolution: resolution,
     uPixelRatio: pixelRatio,
@@ -671,6 +668,10 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
       const f = options.frame()
       clock.value = f.hours
       wet.value = f.wet
+      // As many drops as the rain is hard (their order is random), none when dry
+      rainGeometry.instanceCount = Math.ceil(RAIN_DROPS * f.wet)
+      rain.visible = f.wet > 0.002
+      rippleMesh.visible = rain.visible
       time.value = performance.now() / 1000
       if (map) {
         const c = map.getCenter()
