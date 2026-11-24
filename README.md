@@ -41,7 +41,7 @@ python3 -m http.server -d .output/public 4173 &
 node scripts/capture_thumbs.mjs [day ...] --base http://localhost:4173
 ```
 
-Set `PW_CHANNEL=chrome` to launch the installed Google Chrome instead of Playwright's own browser.
+Set `PW_CHANNEL=chrome` to launch the installed Google Chrome instead of Playwright's own browser. Set `PW_GL=gpu` to draw on the GPU instead of SwiftShader (needed for heavy scenes such as Day 25, which lose their WebGL context in software).
 
 ### Adding map libraries
 
