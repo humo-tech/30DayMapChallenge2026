@@ -160,7 +160,12 @@ function rainRate(tenMin: number[], hours: number): number {
   return hourTo(k) + (hourTo(k + 1) - hourTo(k)) * (x - k)
 }
 // Rain this hard (mm/h) or harder is drawn at full
-const RAIN_HEAVY = 6
+// (mm/h: 1-3 is a drizzle, 7 is steady; a downpour draws full. How many drops that is goes by a
+// curve, so drizzle stays sparse)
+const RAIN_HEAVY = 15
+const RAIN_CURVE = 1.3
+// Rain this hard (mm/h) or harder dims the day fully (overcast)
+const OVERCAST_AT = 6
 const loading = ref(true)
 const container = ref<HTMLDivElement>()
 
@@ -292,12 +297,14 @@ function togglePlay() {
 
 /** What the layer draws this frame: the clock, how hard it rains, the basemap's tint */
 function frameState() {
-  const wet = Math.min(1, rainRate(rainToday.value, now.value) / RAIN_HEAVY)
+  const rate = rainRate(rainToday.value, now.value)
+  const wet = Math.min(1, (rate / RAIN_HEAVY) ** RAIN_CURVE)
+  const overcast = Math.min(1, rate / OVERCAST_AT)
   const [rise, set] = sunTimes(day.value, MAKUHARI)
   const t = now.value
   const smooth = (x: number) => x * x * (3 - 2 * x)
   const ramp = (x: number) => smooth(Math.min(1, Math.max(0, (x + TWILIGHT_H) / (2 * TWILIGHT_H))))
-  const light = ramp(t - rise) * (1 - ramp(t - set)) * (1 - RAIN_DIM * wet)
+  const light = ramp(t - rise) * (1 - ramp(t - set)) * (1 - RAIN_DIM * overcast)
   const warm = Math.exp(-(((t - rise) / TWILIGHT_H) ** 2)) + Math.exp(-(((t - set) / TWILIGHT_H) ** 2))
   const rgb = mix(mix(NIGHT_TINT, DAY_TINT, light), TWILIGHT_TINT, 0.55 * Math.min(1, warm))
   // Restyling the map is not free (every layer's colors are evaluated again): only when the
