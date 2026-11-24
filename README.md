@@ -87,6 +87,8 @@ scripts/.venv/bin/python scripts/day01/extract_tottori.py   # --release 2026-10-
 | `scripts/day24/infer_flows.py <area> <day>` | HELLO CYCLING rides guessed from the GBFS `station_status` 5-minute snapshots on S3 (bikes in docks stepping down at one station and up at another): the transport problem solved 40 times over random assumptions and averaged, and the doubly constrained gravity model (Sinkhorn) → `scripts/.cache/day24/flows_<area>_<day>_<method>.json` (+ a preview image) |
 | `scripts/day24/export_flows.py <area> <day> ...` | The guessed flows with an end in the map's box, by hour of leaving, as 8-byte records, and each station's bikes in docks per 5 minutes → `public/data/day24/<area>.json`, `<area>_<day>_<method>.bin`, `<area>_<day>_docked.bin` |
 | `scripts/day24/fetch_rain.py <day> ...` | JMA's 10-minute precipitation at AMeDAS Chiba for those days → `public/data/day24/rain.json` |
+| `scripts/day25/fetch_osm.py` | Everything OpenStreetMap has around Komazawa Olympic Park (Overpass API) → `scripts/.cache/day25/komazawa.json` |
+| `scripts/day25/build_park.py` | The park as a plan for a wooden toy, in metres round its middle: outline, areas (pitches, playgrounds, lawns, …), buildings, paths as surfaces, the jogging, cycling and family courses as loops, white lines on the pitches, the stadium's track and stands, and trees planted in the green (OSM has hardly any) → `public/data/day25/park.json` |
 
 ## Deployment (GitHub Pages)
 
