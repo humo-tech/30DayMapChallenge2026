@@ -99,7 +99,9 @@ const RADIUS = 45
 const RAIN_DROPS = 24_000
 const RAIN_BOX = 7_000 // m, a side
 const RAIN_HEIGHT = 1_200 // m
-const RAIN_LEN = 45 // m
+const RAIN_LEN_PX = 22 // a streak's length on screen
+const RAIN_PX_PER_S = 900 // how fast a drop falls on screen
+const EARTH_M = 40_075_016.686
 const RIPPLE_HALF = 4_000 // m, the ground quad's half side (it follows the map's centre)
 const BLOOM = { strength: 0.6, radius: 0.45, threshold: 0.35 }
 
@@ -208,7 +210,7 @@ const rainVertexShader = /* glsl */ `
   uniform float uSize;
   uniform float uHeight;
   uniform float uLen;
-  uniform float uTime;
+  uniform float uPhase; // heights fallen
   uniform vec2 uWind; // m east and north the wind carries a drop over each m it falls
   uniform vec2 uResolution;
   uniform float uPixelRatio;
@@ -216,8 +218,8 @@ const rainVertexShader = /* glsl */ `
   varying float vSide;
 
   void main() {
-    float speed = 150.0 + 70.0 * aSeed.w;
-    float fall = fract(aSeed.z + uTime * speed / uHeight);
+    // (the phase is summed on the CPU, at a speed set by the zoom, so it stays smooth as that changes)
+    float fall = fract(aSeed.z + uPhase * (1.0 + 0.35 * aSeed.w));
     float z = uHeight * (1.0 - fall);
     // Wrapped round the centre, so the box moves with the map and no drop is made or lost
     vec2 xy = uCenter + (fract(aSeed.xy - uCenter / uSize) - 0.5) * uSize + uWind * (uHeight - z);
@@ -350,6 +352,9 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
   const clock = { value: 0 }
   const time = { value: 0 }
   const wet = { value: 0 }
+  // Rain: heights fallen so far
+  const phase = { value: 0 }
+  let lastTime = 0
   const resolution = { value: new Vector2(1, 1) }
   const pixelRatio = { value: 1 }
   const center = { value: new Vector2() }
@@ -591,8 +596,8 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
     uCenter: center,
     uSize: { value: RAIN_BOX },
     uHeight: { value: RAIN_HEIGHT },
-    uLen: { value: RAIN_LEN },
-    uTime: time,
+    uLen: { value: 60 },
+    uPhase: phase,
     uWind: { value: new Vector2(0.18, -0.08) },
     uResolution: resolution,
     uPixelRatio: pixelRatio,
@@ -672,12 +677,21 @@ export function day24Layer(options: Day24LayerOptions): Day24Layer {
       rainGeometry.instanceCount = Math.ceil(RAIN_DROPS * f.wet)
       rain.visible = f.wet > 0.002
       rippleMesh.visible = rain.visible
-      time.value = performance.now() / 1000
+      const clockS = performance.now() / 1000
+      const dt = lastTime ? Math.min(0.1, clockS - lastTime) : 0
+      lastTime = clockS
+      time.value = clockS
       if (map) {
         const c = map.getCenter()
         const [x, y] = toFrame(c.lng, c.lat)
         center.value.set(x, y)
         pixelRatio.value = map.getPixelRatio()
+        // Rain falls at a speed on screen, not in metres: about this many px a second, whatever
+        // the zoom (at the Navara framing, ~3 m a px, that is ~2 km/s: drops are a blur, not a drift)
+        const mpp = (EARTH_M * Math.cos((c.lat * Math.PI) / 180)) / (512 * 2 ** map.getZoom())
+        const speed = Math.min(2500, Math.max(120, RAIN_PX_PER_S * mpp))
+        phase.value += (dt * speed) / RAIN_HEIGHT
+        rainUniforms.uLen.value = Math.min(260, Math.max(25, RAIN_LEN_PX * mpp))
       }
     },
     render(gl, { defaultProjectionData, projectionMatrix }) {
