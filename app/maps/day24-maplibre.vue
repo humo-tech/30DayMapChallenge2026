@@ -36,7 +36,9 @@ const mix = (a: number[], b: number[], k: number) => a.map((c, i) => c + (b[i]! 
 const TWILIGHT_H = 0.7
 // How much a heavy rain dims the day (overcast)
 const RAIN_DIM = 0.35
-const ROAD_LIFT_NIGHT = 2.2
+const ROAD_LIFT_NIGHT = 1.5
+// How far the lines (roads, railways, boundaries, rivers) are faded toward the ground's color
+const LINE_FADE = 0.5
 const MAKUHARI = { lng: 140.04, lat: 35.65 }
 
 /** Sunrise and sunset (hours, JST) on `day` at `lat`/`lng` (NOAA's approximation, to a minute or two). */
@@ -323,11 +325,15 @@ function frameState() {
   return { hours: t, wet }
 }
 
-/** One color of the style, times the global tint (and `extra`, a global-state number, if given) */
-function tinted(color: unknown, extra?: string): unknown {
+/**
+ * One color of the style, times the global tint (and `extra`, a global-state number, if given),
+ * after `fade` of the way toward the earth's white: the lines draw less against the ground, and
+ * so under the arcs and columns
+ */
+function tinted(color: unknown, extra?: string, fade = 0): unknown {
   const channel = (i: number) => [
     '*',
-    ['at', i, ['var', 'c']],
+    fade ? ['+', ['at', i, ['var', 'c']], ['*', fade, ['-', 255, ['at', i, ['var', 'c']]]]] : ['at', i, ['var', 'c']],
     ['number', ['at', i, ['array', 'number', 3, ['global-state', 'tint']]]],
     ...(extra ? [['number', ['global-state', extra]]] : []),
   ]
@@ -348,7 +354,7 @@ function tintedStyle(papers: maplibregl.StyleSpecification): maplibregl.StyleSpe
         'fill-extrusion-color': '#cfd3da',
         'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': 0.85,
+        'fill-extrusion-opacity': 0.6,
       },
     },
   ] as maplibregl.LayerSpecification[]
@@ -358,7 +364,7 @@ function tintedStyle(papers: maplibregl.StyleSpecification): maplibregl.StyleSpe
     if (layer.type === 'background') paint['background-color'] = 'rgb(255, 255, 255)'
     const road = /^(roads|railway)_/.test(layer.id)
     for (const [key, value] of Object.entries(paint)) {
-      if (key.endsWith('-color')) paint[key] = tinted(value, road ? 'lift' : undefined)
+      if (key.endsWith('-color')) paint[key] = tinted(value, road ? 'lift' : undefined, layer.type === 'line' ? LINE_FADE : 0)
     }
     layer.paint = paint as never
   }
