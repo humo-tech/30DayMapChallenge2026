@@ -90,6 +90,11 @@ export abstract class WaveDomainMeshDesc<Config extends MeshConfigWithSelectiveE
     if (this.sim) this.sim.speed = x
   }
 
+  /** New values on the wave grid (see WaveSim.updateGrid). */
+  updateGrid(data: Uint16Array): void {
+    this.sim?.updateGrid(data)
+  }
+
   /** Next time, starts afresh (e.g. after being hidden a while). */
   reset(): void {
     this.sim?.reset()

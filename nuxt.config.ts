@@ -47,8 +47,8 @@ export default defineNuxtConfig({
   nitro: {
     preset: 'github-pages',
     prerender: {
-      // Prerender all 30 day pages, the bare Navara showcase pages, Days 12, 20 and 24 on MapLibre and
-      // Day 23 in plain Three.js
+      // Prerender all 30 day pages, the bare Navara showcase pages, Days 12, 20 and 24 on MapLibre,
+      // Day 23 in plain Three.js and Day 26's shelved first take (3D clouds)
       routes: [
         '/',
         ...THEMES.map((t) => `/day/${t.day}`),
@@ -57,6 +57,7 @@ export default defineNuxtConfig({
         '/day/20-maplibre',
         '/day/24-maplibre',
         '/day/23-three',
+        '/day/26-clouds',
       ],
     },
   },

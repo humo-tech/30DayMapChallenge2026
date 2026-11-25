@@ -23,8 +23,9 @@ const wait = Number(opt('wait', 8000))
 const THUMB_W = 640
 const THUMB_H = 400
 // Days captured at another URL (Day 22: the freehand map alone, without the Mercator map beside,
-// with its ties and the real borders; Day 23: all the flavours, held rather than cycling on)
-const PATHS = { 22: '/day/22?compare=off&ties=on&real=on', 23: '/day/23?flavour=all' }
+// with its ties and the real borders; Day 23: all the flavours, held rather than cycling on; Day
+// 26: held on 24 October, the cold wake behind the storm)
+const PATHS = { 22: '/day/22?compare=off&ties=on&real=on', 23: '/day/23?flavour=all', 26: '/day/26?hour=230&play=0' }
 const days = args.length ? args.map(Number) : Array.from({ length: 30 }, (_, i) => i + 1)
 
 mkdirSync('app/assets/thumbs', { recursive: true })
