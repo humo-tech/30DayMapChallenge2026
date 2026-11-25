@@ -71,13 +71,17 @@ export const waveChunk = /* glsl */ `
     float sea;     // 0 (land) to 1 (open sea)
   };
   Wave wave(vec2 lngLat) {
-    vec2 f = vec2((lngLat.x - uGrid.w) / uCell, (uGrid.z - lngLat.y) / uCell);
+    // (east of the grid's west edge, round the globe: a box can cross 180°)
+    vec2 f = vec2(mod(lngLat.x - uGrid.w, 360.0) / uCell, (uGrid.z - lngLat.y) / uCell);
     vec2 i0 = floor(f);
     vec2 t = f - i0;
     vec2 dir = vec2(0.0);
     float h = 0.0, p = 0.0, sum = 0.0;
+    // A grid round the whole globe wraps; one over a box has nothing past its edges
+    bool global = uGrid.x * uCell > 359.0;
     for (int k = 0; k < 4; k++) {
       vec2 o = vec2(k & 1, k >> 1);
+      if (!global && i0.x + o.x > uGrid.x - 1.0) continue;
       ivec2 c = ivec2(mod(i0.x + o.x, uGrid.x), clamp(i0.y + o.y, 0.0, uGrid.y - 1.0));
       vec3 v = texelFetch(uField, c, 0).rgb;
       float w = (o.x > 0.5 ? t.x : 1.0 - t.x) * (o.y > 0.5 ? t.y : 1.0 - t.y);
@@ -215,6 +219,9 @@ export abstract class WaveSim {
   private quad?: Mesh<PlaneGeometry, ShaderMaterial>
   private offCamera = new Camera()
   private domain?: Domain
+  // The grid on the GPU, and its texels (for `updateGrid`)
+  private field?: DataTexture
+  private fieldTexels?: Uint16Array
 
   protected track<T extends { dispose(): void }>(t: T): T {
     this.disposables.push(t)
@@ -231,6 +238,8 @@ export abstract class WaveSim {
     field.minFilter = field.magFilter = NearestFilter
     field.generateMipmaps = false
     field.needsUpdate = true
+    this.field = field
+    this.fieldTexels = rgba
     return () => ({
       uField: { value: field },
       uGrid: { value: [grid.width, grid.height, grid.lat0, grid.lng0] },
@@ -238,6 +247,21 @@ export abstract class WaveSim {
       uDomain: { value: [0, 0, 1] },
       uSpeed: { value: PHASE_SPEED },
     })
+  }
+
+  /**
+   * Puts new values on the grid (the same size and layout as the one it was made with: swh,
+   * mwd, mwp per cell, float16), for waves that change as they run (Day 26).
+   */
+  updateGrid(data: Uint16Array): void {
+    const texels = this.fieldTexels
+    if (!texels || !this.field) return
+    for (let i = 0, n = texels.length / 4; i < n; i++) {
+      texels[i * 4] = data[i * 3]!
+      texels[i * 4 + 1] = data[i * 3 + 1]!
+      texels[i * 4 + 2] = data[i * 3 + 2]!
+    }
+    this.field.needsUpdate = true
   }
 
   /** A full-screen pass, run with `run()` */

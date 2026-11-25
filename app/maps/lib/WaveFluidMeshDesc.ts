@@ -18,4 +18,9 @@ export class WaveFluidMeshDesc extends WaveDomainMeshDesc<WaveFluidConfig, WaveF
   get params(): FluidParams {
     return this.sim!.params
   }
+
+  /** How much of the tint (WaveFluidOptions.tint) shows, 0 - 1 */
+  set tintMix(x: number) {
+    if (this.sim) this.sim.tintMix = x
+  }
 }

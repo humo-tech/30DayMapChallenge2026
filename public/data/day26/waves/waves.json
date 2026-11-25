@@ -1,0 +1,17 @@
+{
+  "start": "2026-10-15T00:00Z",
+  "every": 3,
+  "frames": 95,
+  "width": 521,
+  "height": 213,
+  "lat0": 48.0,
+  "lng0": 100.0,
+  "dlon": 0.25,
+  "scale": {
+    "swh": 0.1,
+    "mwd": 1.40625,
+    "mwp": 0.1
+  },
+  "land": 255,
+  "source": "ECMWF open data, IFS wave model (CC BY 4.0)"
+}

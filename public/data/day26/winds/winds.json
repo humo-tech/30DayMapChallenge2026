@@ -1,0 +1,18 @@
+{
+  "start": "2026-10-15T00:00Z",
+  "every": 3,
+  "frames": 95,
+  "width": 160,
+  "height": 107,
+  "lat0": 48.0,
+  "lng0": 100.0,
+  "step": 0.5,
+  "fields": [
+    "u850",
+    "v850",
+    "u200",
+    "v200"
+  ],
+  "scale": 0.75,
+  "source": "ECMWF open data, IFS (CC BY 4.0)"
+}

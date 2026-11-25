@@ -13,7 +13,7 @@
 //   over, a little at a time, and the flow carries and stirs it on the way: the eddies marble
 //   it where the power changes. The shell over the sea lights it as a surface, its relief from
 //   the dye, so it heaves as it flows.
-import { HalfFloatType, LinearFilter, RGBAFormat, Vector2, Vector3, WebGLRenderTarget, type IUniform, type ShaderMaterial, type WebGLRenderer } from 'three'
+import { HalfFloatType, LinearFilter, RGBAFormat, Vector2, Vector3, Vector4, WebGLRenderTarget, type IUniform, type ShaderMaterial, type Texture, type WebGLRenderer } from 'three'
 import {
   WaveSim,
   domainChunk,
@@ -31,6 +31,13 @@ export type WaveFluidOptions = {
   simSize?: number
   /** The dye's. Default: 1280 */
   dyeSize?: number
+  /**
+   * Colors the sea from another field than the waves' power (Day 26: the sea's temperature),
+   * the waves' power still lighting it: a texture over a lng/lat box (`box`: west, south edges,
+   * width, height in °; it may reach past 180°), and GLSL for `vec3 tint(float texel)`. Shown as
+   * much as `tintMix` (on the sim, 0 - 1). Default: none (Day 12's own colors)
+   */
+  tint?: { texture: Texture; box: [number, number, number, number]; glsl: string }
 }
 // The defaults, tunable as it runs (`params`):
 // - The eddies: rough seas stir them, up to `stir` flow texels/s for an 8 m sea, pulled toward
@@ -271,10 +278,14 @@ const injectFragment = /* glsl */ `
 
 // Navara appends its G-buffer writes (which read `normal`) before main()'s closing brace: keep
 // main() last
-const shellFragment = /* glsl */ `
+const shellFragment = (tint?: string) => /* glsl */ `
   ${waveChunk}
   ${domainChunk}
   ${rampChunk()}
+  ${tint ? `#define USE_TINT\n${tint}` : ''}
+  uniform sampler2D uTint;
+  uniform vec4 uTintBox;
+  uniform float uTintMix;
   uniform sampler2D uDye;
   uniform vec3 uDomain;
   uniform vec2 uDyeTexel;
@@ -303,6 +314,13 @@ const shellFragment = /* glsl */ `
     vec3 c = (1.0 - exp(-0.9 * dye)) * diffuse + glint * uGlint * (0.3 + ramp(power(w)));
     // A faint wash of the power field under it all
     c += ramp(power(w)) * 0.05;
+    #ifdef USE_TINT
+    // Colored by the other field, lit by the waves: the rougher, the lighter
+    vec2 tuv = vec2(mod(ll.x - uTintBox.x, 360.0), ll.y - uTintBox.y) / uTintBox.zw;
+    float energy = 1.0 - exp(-0.9 * lum(dye));
+    vec3 tinted = tint(texture2D(uTint, tuv).r) * (0.5 + 0.8 * energy) * diffuse + glint * uGlint * (0.3 + energy);
+    c = mix(c, tinted, uTintMix);
+    #endif
     gl_FragColor = vec4(c * smoothstep(0.0, 0.6, w.sea), 1.0);
   }
 `
@@ -316,7 +334,7 @@ const clearFragment = /* glsl */ `
 `
 
 export class WaveFluidSim extends WaveSim {
-  readonly shellFragment = shellFragment
+  readonly shellFragment: string
   readonly shellUniforms: Record<string, IUniform>
   private velocity: PingPong
   private pressure: PingPong
@@ -328,8 +346,9 @@ export class WaveFluidSim extends WaveSim {
   /** Tunable as it runs */
   params: FluidParams = { ...FLUID_DEFAULTS }
 
-  constructor(grid: WaveGrid, { simSize = 256, dyeSize = 1280 }: WaveFluidOptions = {}) {
+  constructor(grid: WaveGrid, { simSize = 256, dyeSize = 1280, tint }: WaveFluidOptions = {}) {
     super()
+    this.shellFragment = shellFragment(tint?.glsl)
     const geo = this.fieldUniforms(grid)
 
     const target = (size: number) =>
@@ -386,7 +405,15 @@ export class WaveFluidSim extends WaveSim {
       uFlatness: { value: 0 },
       uDiffuse: { value: 0 },
       uGlint: { value: 0 },
+      uTint: { value: tint?.texture ?? null },
+      uTintBox: { value: new Vector4(...(tint?.box ?? [0, 0, 1, 1])) },
+      uTintMix: { value: tint ? 1 : 0 },
     }
+  }
+
+  /** How much of the tint (WaveFluidOptions.tint) shows, 0 (the waves' own colors) - 1 */
+  set tintMix(x: number) {
+    this.shellUniforms.uTintMix!.value = x
   }
 
   protected override begin(renderer: WebGLRenderer): void {
