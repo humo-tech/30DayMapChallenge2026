@@ -366,15 +366,6 @@ def local_frame(lat: float, lon: float) -> tuple[np.ndarray, np.ndarray, np.ndar
     return east, np.cross(up, east), up
 
 
-def halton(i: int, base: int) -> float:
-    f, x = 1.0, 0.0
-    while i > 0:
-        f /= base
-        x += f * (i % base)
-        i //= base
-    return x
-
-
 def ease(x: float) -> float:
     return x * x * (3 - 2 * x)
 
@@ -640,10 +631,11 @@ class Renderer:
         self.set(uLightGrid=self.light_grid)
         if self.clouds:
             self.bake()
-        # 3. The clouds, at a lower resolution, from a different jitter each frame; then 3b,
-        # blended into the last frame's, taken to where they are now
+        # 3. The clouds, at a lower resolution, the march started at a different point each frame
+        # (not shifted across the screen: that set the far clouds, seen edge on, trembling up and
+        # down); then 3b, blended into the last frame's, taken to where they are now
         k = self.frame_no
-        self.set(uJitter=(halton(k + 1, 2) - 0.5, halton(k + 1, 3) - 0.5), uSeed=float(k % 64) * 1.37)
+        self.set(uJitter=(0.0, 0.0), uSeed=float(k % 64) * 1.37)
         self.bind("uCloud", "uCloudDepth")
         self.set(uMode=0, uViewport=self.cloud_size)
         self.draw(self.scene, self.raw_fbo)
