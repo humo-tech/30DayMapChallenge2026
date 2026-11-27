@@ -15,6 +15,7 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.3",
     "@navaramap/three": "^0.3.1",
     "@navaramap/three-default-plugin": "^0.3.1",
     "@navaramap/three-plugins": "^0.3.1",
