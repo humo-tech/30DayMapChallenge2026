@@ -26,6 +26,8 @@ export type Sample = {
 
 export type Ground = {
   meta: FeelMeta
+  /** The grid itself, RGBA as decoded (R material, G amount, B height / heightStep) */
+  pixels: Uint8ClampedArray
   at(lng: number, lat: number): Sample
   heightAt(lng: number, lat: number): number
   /** The slope, rise per metre east and north */
@@ -70,6 +72,7 @@ export async function loadGround(base: string): Promise<Ground> {
   }
   return {
     meta,
+    pixels: px,
     at(lng, lat) {
       const k = cell(lng, lat)
       return { material: MATERIALS[px[k]!] ?? 'sea', amount: px[k + 1]! / 255, height: heightAt(lng, lat) }

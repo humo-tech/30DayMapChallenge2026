@@ -155,6 +155,32 @@ export class FeelVoice {
     o.stop(now + 0.15)
   }
 
+  /**
+   * Floe on floe: a hollow knock, a dull tok with a short ring of ice in it, lower for the bigger
+   * floes (`size` about 0.2-0.6)
+   */
+  knock(strength: number, size: number) {
+    const { ctx } = this
+    const now = ctx.currentTime
+    const f0 = (520 + Math.random() * 160) * (0.45 / Math.max(0.15, size))
+    for (const [ratio, gain, dur] of [
+      [1, 0.35, 0.09],
+      [2.76, 0.12, 0.05],
+    ] as const) {
+      const o = ctx.createOscillator()
+      o.frequency.setValueAtTime(f0 * ratio, now)
+      o.frequency.exponentialRampToValueAtTime(f0 * ratio * 0.92, now + dur)
+      const g = ctx.createGain()
+      g.gain.setValueAtTime(0, now)
+      g.gain.linearRampToValueAtTime(gain * strength, now + 0.003)
+      g.gain.exponentialRampToValueAtTime(0.001, now + dur)
+      o.connect(g).connect(this.master)
+      o.start(now)
+      o.stop(now + dur + 0.02)
+    }
+    this.grain(f0 * 3, 3, 0.35 * strength, 0.03)
+  }
+
   /** A town giving way: a low thud */
   thud(strength: number) {
     const { ctx } = this

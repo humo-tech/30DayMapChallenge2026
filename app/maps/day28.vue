@@ -13,26 +13,46 @@ import { loadGround, type Ground, type Material } from './lib/feelGround'
 import { Slider } from './lib/feelPhysics'
 import { FeelVoice } from './lib/feelAudio'
 import { Haptics } from './lib/feelHaptics'
+import { FeelMinimap } from './lib/feelMinimap'
+import { DriftIce } from './lib/driftIce'
+import { DriftIceMeshDesc, type DriftIceConfig } from './lib/DriftIceMeshDesc'
 import { BONES, HandInput, type HandFrame } from './lib/feelHand'
 
 const baseURL = useRuntimeConfig().app.baseURL
 const dataBase = `${baseURL}data/day28`
 
-// The morning of the image: Terra crosses Hokkaido at about half past ten (JST)
-const WHEN = new Date('2025-03-01T01:30:00Z')
+// The morning of the image (Terra crossed at about half past ten), the sun put an hour earlier
+// and lower, at half past nine (JST), so its light rakes the relief
+const WHEN = new Date('2025-03-01T00:30:00Z')
+// The relief, twice as high: from this far up, true height leaves the mountains flat
+const EXAGGERATION = 2
 const MODIS =
   'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/2025-03-01/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg'
 const REEARTH_TERRAIN = 'https://terrain.reearth.land/cesium-mesh/ellipsoid/{z}/{x}/{y}.terrain'
 
-// Off Abashiri: the drift ice, the town, the frozen lagoons, the snowfields and forests behind
-const START = { lng: 144.15, lat: 43.92 }
-const DISTANCE = 95_000
+// Off Abashiri: the drift ice, the coast, the frozen lagoons behind
+const START = { lng: 144.42, lat: 44.12 }
+// How far the camera is from the ground it looks at (m): the wheel moves it in and out
+const DISTANCE = 40_000
+const NEAREST = 15_000
+const FARTHEST = 250_000
+// The floes: how far apart they lie (m), and how far they stand out of the water (m: real drift
+// ice is a metre or two, which from here would not show)
+const FLOE_SPACING = 1_300
+const FLOE_THICKNESS = 70
+// The finger, on the ground: a disc this many CSS pixels across
+const FINGER_PX = 30
+// A sea-level point for the water's height as drawn (off Abashiri)
+const SEA_POINT = { lng: 144.6, lat: 44.4 }
 const PITCH = -52
 const M_PER_DEG_LAT = 110_950
 
 const query = useRoute().query
 const container = ref<HTMLDivElement>()
 const marksEl = ref<HTMLCanvasElement>()
+const minimapEl = ref<HTMLCanvasElement>()
+// The minimap's shape: the grid's box, width over height
+const minimapAspect = ref(1)
 const loading = ref(true)
 const sound = ref(true)
 let view: ThreeView<DefaultDescriptions> | undefined
@@ -96,11 +116,35 @@ onMounted(async () => {
   v.atmosphere.date = WHEN
 
   const scene = plugin.addDefaultPhotorealScene()
-  scene.sun.update({ sun: { castShadow: true, shadowFar: 400_000 } })
-  v.toneMappingExposure = 1.3
+  // No haze, and no dimming by the air: from up here the light it scatters in washes the ice and
+  // snow to a lilac grey, and what it takes out turns them sepia
+  scene.aerialPerspective.update({ aerialPerspective: { inscatter: false, transmittance: false } })
+  // Shadows only as far as the view reaches, so the cascades stay fine enough for the ridges
+  scene.sun.update({
+    sun: { castShadow: true, shadowFar: 150_000, shadowMapSize: v.isMobileOptimized() ? 2048 : 4096, shadowLambda: 0.85, shadowNormalBias: 2 },
+  })
+  v.toneMappingExposure = 1.6
 
-  const terrain = v.addSource({ type: 'quantized-mesh', url: REEARTH_TERRAIN, maxZoom: 18, requestVertexNormals: true })
-  v.addLayer({ type: 'terrain', source: terrain, terrain: { castShadow: true, receiveShadow: true } })
+  // The terrain's water mask makes the sea Navara's water (waves, the sun's glitter), in one dark
+  // colour: the white of the ice in the image under it is gone, and the floes are the ice
+  const terrain = v.addSource({
+    type: 'quantized-mesh',
+    url: REEARTH_TERRAIN,
+    maxZoom: 18,
+    requestVertexNormals: true,
+    requestWaterMask: true,
+  })
+  v.addLayer({
+    type: 'terrain',
+    source: terrain,
+    terrain: {
+      castShadow: true,
+      receiveShadow: true,
+      exaggeration: EXAGGERATION,
+      waterMaskColor: new Color().setStyle('#0d1e33'),
+      waveStrength: 3,
+    },
+  })
   const imagery = v.addSource({ type: 'raster-tile', url: MODIS, maxZoom: 9 })
   v.addLayer({ type: 'raster', source: imagery })
   v.attribution?.add([
@@ -112,11 +156,23 @@ onMounted(async () => {
     },
   ])
 
+  // --- The drift ice ---
+  const ice = new DriftIce(START, ground, FLOE_SPACING)
+  const [seaSample] = await v.sampleTerrainMostDetailed(terrain, [SEA_POINT])
+  if (view !== v) return
+  v.registerMesh('driftIce', DriftIceMeshDesc)
+  const iceConfig: DriftIceConfig = {
+    driftIce: { ice, seaHeight: (seaSample?.height ?? 25 * EXAGGERATION) + 2, thickness: FLOE_THICKNESS, anchorHeight: 500 },
+    geodetic: { ...START, height: 500 },
+  }
+  const floes = v.addMesh<DriftIceMeshDesc>(iceConfig).ref
+
   // --- The camera: looking down at a point on the ground from a fixed distance ---
   const cam = (query.camera as string | undefined)?.split(',').map(Number)
   const centre = cam?.length === 2 && cam.every(Number.isFinite) ? { lng: cam[0]!, lat: cam[1]! } : { ...START }
   const { west, east, south, north } = ground.meta
   let shake = [0, 0]
+  let distance = DISTANCE
   const place = () => {
     centre.lng = Math.min(east - 0.6, Math.max(west + 0.6, centre.lng))
     centre.lat = Math.min(north - 0.4, Math.max(south + 0.4, centre.lat))
@@ -125,14 +181,14 @@ onMounted(async () => {
       lng: centre.lng + (shake[0]! * mPerPx()) / mx,
       lat: centre.lat + (shake[1]! * mPerPx()) / M_PER_DEG_LAT,
       height: 0,
-      distance: DISTANCE,
+      distance,
       heading: 0,
       pitch: PITCH,
       roll: 0,
     })
   }
   // Metres per CSS pixel across the screen at its centre
-  const mPerPx = () => (2 * DISTANCE * Math.tan(((v.camera.fov ?? 60) * Math.PI) / 360)) / container.value!.clientHeight
+  const mPerPx = () => (2 * distance * Math.tan(((v.camera.fov ?? 60) * Math.PI) / 360)) / container.value!.clientHeight
   const sinPitch = Math.sin((-PITCH * Math.PI) / 180)
   place()
 
@@ -174,6 +230,36 @@ onMounted(async () => {
   el.addEventListener('pointermove', (e) => moveTo(e.pointerId, e.clientX, e.clientY))
   el.addEventListener('pointerup', (e) => lift(e.pointerId))
   el.addEventListener('pointercancel', (e) => lift(e.pointerId))
+  el.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault()
+      distance = Math.min(FARTHEST, Math.max(NEAREST, distance * Math.exp(e.deltaY * 0.0015)))
+    },
+    { passive: false },
+  )
+
+  // --- The minimap: where the view is; a tap (or a drag) on it takes the view there ---
+  await nextTick()
+  const minimap = new FeelMinimap(minimapEl.value!, ground)
+  minimapAspect.value = minimap.aspect
+  const mini = minimapEl.value!
+  let miniHeld = false
+  const jump = (e: PointerEvent) => {
+    const r = mini.getBoundingClientRect()
+    Object.assign(centre, minimap.toLngLat(e.clientX - r.left, e.clientY - r.top))
+    slider.vel = [0, 0]
+    slider.target = [...slider.pos]
+  }
+  mini.addEventListener('pointerdown', (e) => {
+    miniHeld = true
+    mini.setPointerCapture(e.pointerId)
+    jump(e)
+  })
+  mini.addEventListener('pointermove', (e) => miniHeld && jump(e))
+  mini.addEventListener('pointerup', () => (miniHeld = false))
+  mini.addEventListener('pointercancel', () => (miniHeld = false))
+  let footprint: { lng: number; lat: number }[] = []
   let handFrame: HandFrame | undefined
   const readHand = () => {
     const rect = el.getBoundingClientRect()
@@ -216,12 +302,14 @@ onMounted(async () => {
   let last = performance.now()
   let lastMaterial: Material | undefined
   let lastGlide: Material | undefined
-  let lastAmount = 0
   let lastHeight: number | undefined
   let travelled = 0 // px since the last grain
   let nextGrain = 20
   let hum = 0 // s since the last buzz of a continuous ground
   let shakeAmp = 0
+  let lastPusher: [number, number] | undefined
+  let lastKnock = 0
+  let frameCount = 0
   const step = () => {
     frame = requestAnimationFrame(step)
     const now = performance.now()
@@ -236,6 +324,9 @@ onMounted(async () => {
     const fy = finger?.y ?? rect.top + rect.height / 2
     const g = groundAt(fx, fy)
     const under = ground.at(g.lng, g.lat)
+    // On the sea the ice is the floes, wherever they have been pushed: the finger itself is in the
+    // water, and wades through it (the sea's heavy feel lets it run ahead of the map, through them)
+    const mat: Material = under.material === 'ice' ? 'sea' : under.material
     const slope = ground.slope(g.lng, g.lat)
     const m = mPerPx()
 
@@ -244,7 +335,7 @@ onMounted(async () => {
     let slip = 0
     const n = Math.ceil(dt / 0.004)
     for (let i = 0; i < n; i++) {
-      const ev = slider.step(dt / n, { material: under.material, amount: under.amount, slope }, 1 / m)
+      const ev = slider.step(dt / n, { material: mat, amount: under.amount, slope }, 1 / m)
       slip = Math.max(slip, ev.slip ?? 0)
     }
     const dx = slider.pos[0]! - before[0]!
@@ -255,20 +346,34 @@ onMounted(async () => {
     shake = [(Math.random() * 2 - 1) * shakeAmp, (Math.random() * 2 - 1) * shakeAmp]
     place()
 
-    // How the ground answers, while the finger is on it and moving over it
+    // The floes: the finger, while down, shoves them out of its way
     const held = holder !== undefined
+    const [px, py] = ice.toPlane(g.lng, g.lat)
+    const pusher = held && lastPusher ? { x: px, y: py, r: (FINGER_PX / 2) * m, vx: (px - lastPusher[0]) / dt, vy: (py - lastPusher[1]) / dt } : undefined
+    lastPusher = held ? [px, py] : undefined
+    const knocks = ice.step(dt, m, pusher)
+    floes.sync()
+    // The hardest knocks this frame, heard (and the finger's own felt)
+    knocks.sort((a, b) => b.speed - a.speed)
+    for (const k of knocks.slice(0, 2)) {
+      if (now - lastKnock < 35) break
+      lastKnock = now
+      voice?.knock(Math.min(1, k.speed / 900), k.r / FLOE_SPACING)
+      if (held) haptics?.buzz(6 + Math.min(1, k.speed / 900) * 20)
+    }
+
+    // How the ground answers, while the finger is on it and moving over it
     const speed = slider.speed
-    const mat = under.material
-    // Let go on ice, the map slides on under where the finger was, and that still scratches
-    const gliding = !held && finger !== undefined && (mat === 'ice' || mat === 'lake') && speed > 25
+    // Let go on a frozen lake, the map slides on under where the finger was, and that still scratches
+    const gliding = !held && finger !== undefined && mat === 'lake' && speed > 25
     const going = held || gliding ? Math.min(1, speed / 900) : 0
     voice?.set(mat, going)
     const mark = (kind: Mark['kind'], size = 1) =>
-      marks.push({ kind, lng: g.lng, lat: g.lat, h: under.height, born: t, size, trail })
+      marks.push({ kind, lng: g.lng, lat: g.lat, h: under.height * EXAGGERATION, born: t, size, trail })
     if (held) {
       if (mat !== lastMaterial) {
         trail++
-        if (mat === 'sea' || (mat === 'ice' && under.amount < 0.5)) {
+        if (mat === 'sea') {
           voice?.splash(0.6 + going)
           haptics?.buzz(60)
           mark('sea', 1.4)
@@ -289,11 +394,10 @@ onMounted(async () => {
             if (travelled > 28) mark('sea'), (travelled = 0)
             if (hum > 0.22 && going > 0.05) haptics?.buzz(30 + going * 90), (hum = 0)
             break
-          case 'ice':
           case 'lake':
             mark(mat)
-            // A floe's edge, or now and then a squeak as it runs
-            if (Math.abs(under.amount - lastAmount) > 0.3 || Math.random() < going * dt * 1.5) {
+            // Now and then a squeak as it runs
+            if (Math.random() < going * dt * 1.5) {
               voice?.squeak(0.5 + going)
               haptics?.buzz(8)
             }
@@ -333,10 +437,15 @@ onMounted(async () => {
     }
     lastGlide = gliding ? mat : undefined
     lastMaterial = held ? mat : undefined
-    lastAmount = under.amount
     lastHeight = held ? under.height : undefined
 
     draw(t, held ? { x: fx - rect.left, y: fy - rect.top, mat, going } : undefined)
+    // The view's corners on the ground (a few picks: not every frame)
+    if (frameCount++ % 6 === 0 || !footprint.length) {
+      const { left: l, top: tp, right: r, bottom: b } = rect
+      footprint = [groundAt(l + 1, tp + 1), groundAt(r - 1, tp + 1), groundAt(r - 1, b - 1), groundAt(l + 1, b - 1)]
+    }
+    minimap.draw(footprint, held ? g : undefined)
   }
 
   // --- Drawing the marks ---
@@ -509,6 +618,7 @@ onBeforeUnmount(() => {
   <div class="map-canvas day28">
     <div ref="container" class="map-canvas" />
     <canvas ref="marksEl" class="marks" />
+    <canvas v-show="!loading" ref="minimapEl" class="minimap" :style="{ aspectRatio: minimapAspect }" aria-label="Where the view is; tap to go there" />
     <div class="controls">
       <button
         type="button"
@@ -542,6 +652,27 @@ onBeforeUnmount(() => {
 .day28 {
   position: relative;
   touch-action: none;
+}
+
+.minimap {
+  position: absolute;
+  left: 12px;
+  bottom: 36px;
+  z-index: 10;
+  width: 200px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+@media (max-width: 700px) {
+  .minimap {
+    width: 128px;
+    left: 8px;
+    bottom: 40px;
+  }
 }
 
 .marks {
