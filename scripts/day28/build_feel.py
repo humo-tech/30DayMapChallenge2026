@@ -18,7 +18,7 @@ and feel.json with the grid's extent and the material names.
 
   scripts/.venv/bin/python scripts/day28/build_feel.py
 """
-import io, json, math, os
+import io, json, math, os, time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -77,7 +77,13 @@ def fetch(xy):
     x, y = xy
     url = (f'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{DATE}'
            f'/GoogleMapsCompatible_Level9/{Z}/{y}/{x}.jpg')
-    return xy, np.asarray(Image.open(io.BytesIO(urllib.request.urlopen(url, timeout=60).read())).convert('RGB'))
+    for attempt in range(5):  # GIBS now and then answers 502, or not at all
+        try:
+            return xy, np.asarray(Image.open(io.BytesIO(urllib.request.urlopen(url, timeout=60).read())).convert('RGB'))
+        except OSError:
+            if attempt == 4:
+                raise
+            time.sleep(2 ** attempt)
 
 mosaic = np.zeros((len(ys) * 256, len(xs) * 256, 3), np.uint8)
 with ThreadPoolExecutor(16) as ex:
@@ -146,7 +152,10 @@ lum = rgb.mean(axis=0)
 lngs = W_ + (np.arange(NX) + 0.5) * RES
 lats = N_ - (np.arange(NY) + 0.5) * RES
 LNG, LAT = np.meshgrid(lngs, lats)
-okhotsk = ((LAT > 44.0) & (LNG > 141.9)) | ((LAT > 43.35) & (LNG > 144.5) & (LNG < 146.2))
+# (the Sea of Okhotsk: north of Hokkaido's Pacific coast, east of Cape Soya, and west of the Pacific
+# beyond Kunashir)
+okhotsk = (LAT > 43.42) & (LNG > 141.9)
+okhotsk &= ~((LNG > 145.75) & (LAT < 44.5))
 okhotsk &= ~((LAT > 45.15) & (LAT < 45.95) & (LNG < 143.3))
 ice_amount = np.clip((lum - 0.18) / 0.45, 0, 1)
 ice = sea & okhotsk & (ice_amount > 0.25)

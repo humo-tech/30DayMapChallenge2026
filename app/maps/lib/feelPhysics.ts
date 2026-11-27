@@ -53,7 +53,6 @@ const mix = (a: Feel, b: Feel, t: number): Feel => ({
 
 /** The feel of what is under the finger: thin ice is half sea, a sparse town half snow */
 export function feelOf(u: Under): Feel {
-  if (u.material === 'ice') return mix(FEELS.sea, FEELS.ice, Math.min(1, u.amount * 1.4))
   if (u.material === 'town') {
     const f = mix(FEELS.snow, FEELS.town, Math.min(1, 0.4 + u.amount))
     return { ...f, stick: FEELS.town.stick * (0.5 + Math.min(1, u.amount * 2)) }
