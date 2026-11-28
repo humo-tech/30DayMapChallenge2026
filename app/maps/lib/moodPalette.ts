@@ -8,13 +8,14 @@ export type Mood = (typeof MOODS)[number]
 export type Weights = Record<Mood, number>
 
 // The parts of the world map, each painted per mood
-export const ROLES = ['sky', 'ocean', 'grid', 'landA', 'landB', 'landC', 'landD', 'ice', 'water', 'border', 'city'] as const
+export const ROLES = ['sky', 'glow', 'ocean', 'grid', 'landA', 'landB', 'landC', 'landD', 'ice', 'water', 'border', 'city'] as const
 export type Role = (typeof ROLES)[number]
 export type Palette = Record<Role, string>
 
 export const PALETTES: Record<Mood, Palette> = {
   // A school atlas
   calm: {
+    glow: '#8fb8e8',
     sky: '#dfe6ee',
     ocean: '#cde2ef',
     grid: '#b3c9d9',
@@ -29,6 +30,7 @@ export const PALETTES: Record<Mood, Palette> = {
   },
   // Sunny pastels
   happy: {
+    glow: '#ffe27a',
     sky: '#fff2c2',
     ocean: '#8fd9ff',
     grid: '#c2ecff',
@@ -43,6 +45,7 @@ export const PALETTES: Record<Mood, Palette> = {
   },
   // A grey-blue rainy day
   sad: {
+    glow: '#5a6a80',
     sky: '#2b3542',
     ocean: '#384a5d',
     grid: '#4a5d72',
@@ -57,6 +60,7 @@ export const PALETTES: Record<Mood, Palette> = {
   },
   // Molten: the world smoulders
   angry: {
+    glow: '#ff3a10',
     sky: '#100302',
     ocean: '#1d0705',
     grid: '#3c1008',
@@ -71,6 +75,7 @@ export const PALETTES: Record<Mood, Palette> = {
   },
   // Neon pop
   surprised: {
+    glow: '#ff4bff',
     sky: '#0c0625',
     ocean: '#160b45',
     grid: '#3d22a6',
@@ -85,6 +90,7 @@ export const PALETTES: Record<Mood, Palette> = {
   },
   // Night: the world asleep, its cities lit
   sleepy: {
+    glow: '#3a5ab0',
     sky: '#010309',
     ocean: '#040917',
     grid: '#0e1931',
@@ -128,8 +134,10 @@ export function blend(w: Weights): Record<Role, [number, number, number]> {
 export const only = (m: Mood): Weights => Object.fromEntries(MOODS.map((k) => [k, k === m ? 1 : 0])) as Weights
 
 /**
- * How much of each mood a face shows, from MediaPipe's blendshape scores (0-1 each). Each mood
- * past a small dead zone, so a still face is calm; calm takes what is left.
+ * How much of each mood a face shows, from MediaPipe's blendshape scores (0-1 each). A real face
+ * rarely pushes a score far, so each mood starts low and is full well before the score is; and
+ * the strongest mood takes nearly all (the others' share falls with the cube of theirs), so the
+ * map turns decisively rather than drifting through muddy mixes. Calm takes what is left.
  */
 export function moodsOf(b: Record<string, number>): Weights {
   const g = (k: string) => b[k] ?? 0
@@ -144,20 +152,16 @@ export function moodsOf(b: Record<string, number>): Weights {
   const jaw = g('jawOpen')
   const sneer = avg('noseSneerLeft', 'noseSneerRight')
   const raw: Omit<Weights, 'calm'> = {
-    happy: past(smile, 0.25, 0.7),
-    sad: past(frown + g('browInnerUp') * 0.6 - smile, 0.15, 0.55),
-    angry: past(browDown + sneer * 0.5, 0.25, 0.65),
-    surprised: past(jaw * 0.6 + browUp * 0.5 + wide * 0.4, 0.3, 0.7),
-    sleepy: past(blink, 0.45, 0.85),
+    happy: past(smile, 0.12, 0.45),
+    sad: past(frown * 1.2 + g('browInnerUp') * 0.5 - smile, 0.08, 0.4),
+    angry: past(browDown + sneer * 0.5, 0.12, 0.45),
+    surprised: past(jaw * 0.7 + browUp * 0.5 + wide * 0.4, 0.2, 0.55),
+    sleepy: past(blink, 0.35, 0.7),
   }
-  const total = Object.values(raw).reduce((a, x) => a + x, 0)
-  const scale = total > 1 ? 1 / total : 1
-  const w = { calm: 0 } as Weights
-  let used = 0
-  for (const [k, x] of Object.entries(raw) as [Mood, number][]) {
-    w[k] = x * scale
-    used += w[k]
-  }
-  w.calm = 1 - used
+  const strength = Math.max(...Object.values(raw))
+  const cubes = Object.fromEntries(Object.entries(raw).map(([k, x]) => [k, x ** 3])) as Omit<Weights, 'calm'>
+  const sum = Object.values(cubes).reduce((a, x) => a + x, 0)
+  const w = { calm: 1 - strength } as Weights
+  for (const [k, x] of Object.entries(cubes) as [Mood, number][]) w[k] = sum > 0 ? (x / sum) * strength : 0
   return w
 }

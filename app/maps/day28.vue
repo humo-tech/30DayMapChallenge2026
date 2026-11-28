@@ -3,12 +3,13 @@
 // palette for each of six moods; the face's expression (MediaPipe's face blendshapes) weighs
 // them, and the globe wears the mix: calm is a school atlas, a smile turns it sunny, a frown
 // rainy, a scowl molten, surprise neon, closed eyes night with its cities lit. The face itself is
-// never shown: a plush mask follows it. Without a camera the plush acts the moods out by itself.
+// never shown: a plush mask follows it. Turning the head turns the globe. Without a camera the plush
+// acts the moods out by itself.
 // Data: Natural Earth (scripts/day28/build_world.py)
 import ThreeView, { Color } from '@navaramap/three'
-import { Color as ThreeColor } from 'three'
+import { Color as ThreeColor, Vector3 } from 'three'
 import { DefaultPlugin, type DefaultDescriptions } from '@navaramap/three-default-plugin'
-import { blend, moodsOf, MOODS, only, ROLES, type Role, type Weights } from './lib/moodPalette'
+import { blend, moodsOf, MOODS, only, ROLES, type Mood, type Role, type Weights } from './lib/moodPalette'
 import { FaceInput } from './lib/faceMood'
 import { demoFace, drawPlush } from './lib/plushMask'
 import { KEYS, MoodRecolorEffectDesc, type MoodRecolorConfig } from './lib/MoodRecolorEffectDesc'
@@ -21,9 +22,25 @@ const START = { lng: 138, lat: 22 }
 const HEIGHT = 11_500_000
 const SPIN = 3
 const IDLE_S = 6
+// The head turns it too, in front of the camera: look left or right and it spins that way (°/s at
+// a full turn), look up or down and it tips to the north or south (° of latitude at a full nod),
+// with a dead zone round straight ahead, where it goes on turning by itself
+const HEAD_SPIN = 70
+const HEAD_TILT = 45
+const DEAD = 0.18
 
 const container = ref<HTMLDivElement>()
 const faceEl = ref<HTMLCanvasElement>()
+// What the face reads as: the strongest mood now, and how strongly (0-1)
+const reading = ref<{ mood: Mood; share: number }>({ mood: 'calm', share: 1 })
+const MOOD_NAMES: Record<Mood, string> = {
+  calm: 'Calm',
+  happy: 'Happy',
+  sad: 'Sad',
+  angry: 'Angry',
+  surprised: 'Surprised',
+  sleepy: 'Sleepy',
+}
 const loading = ref(true)
 let view: ThreeView<DefaultDescriptions> | undefined
 let frame = 0
@@ -108,16 +125,16 @@ onMounted(async () => {
     })
   }
 
-  // The biggest cities, by size
+  // The biggest cities, by size: shown only at night, as lights (see MoodRecolorEffectDesc)
   const cities = v.addSource({ type: 'geojson', url: `${dataBase}/cities.geojson` })
   const cityColor = key('city')
   const cityLayer = v.addLayer({
     type: 'vector',
     source: cities,
-    point: { color: cityColor, size: 3, sizeInMeters: false, clampToGround: false, height: 8_000, offsetDepth: false, declutter: false },
+    point: { color: cityColor, size: 4, sizeInMeters: false, clampToGround: false, height: 8_000, offsetDepth: false, declutter: false },
   })
   cityLayer.on('featureUpdated', ({ evaluator }) => {
-    evaluator.evaluate(({ properties }) => ({ color: cityColor, size: 2 + Math.sqrt(Number(properties?.['pop'] ?? 0) / 1e6) * 1.4 }), {
+    evaluator.evaluate(({ properties }) => ({ color: cityColor, size: 2.5 + Math.sqrt(Number(properties?.['pop'] ?? 0) / 1e6) * 1.6 }), {
       filters: ['pop'],
     })
   })
@@ -146,6 +163,13 @@ onMounted(async () => {
   const panel = faceEl.value!
   const pctx = panel.getContext('2d')!
   let shown: Weights = only('calm')
+  let headTurn = 0
+  let lastLabel = 0
+  // What the head, the hands and the spin move; and the surprise's springy zoom
+  let base = { ...START, height: HEIGHT }
+  let zoom = 1
+  let zoomV = 0
+  const globeAt = new Vector3()
   let last = performance.now()
   const start = last
   const step = () => {
@@ -210,11 +234,60 @@ onMounted(async () => {
     const ease = 1 - Math.exp(-dt / 0.25)
     shown = Object.fromEntries(MOODS.map((m) => [m, shown[m] + (want[m] - shown[m]) * ease])) as Weights
     paint(shown)
-    // The globe turns west to east under the camera when left alone
-    if (now > idleFrom) {
-      const at = v.camera.positionGeographic
-      v.setCamera({ lng: at.lng + SPIN * dt, lat: at.lat, height: at.height, heading: 0, pitch: -90, roll: 0 })
+    // The label: ten times a second is plenty
+    if (now - lastLabel > 100) {
+      lastLabel = now
+      const top = MOODS.reduce((a, m) => (shown[m] > shown[a] ? m : a), 'calm' as Mood)
+      reading.value = { mood: top, share: shown[top] }
     }
+    // The globe: turned by the head when there is one in front of the camera, else turning west to
+    // east by itself; left to the hands while they turn it, and a while after
+    const past = (x: number) => Math.sign(x) * Math.max(0, Math.abs(x) - DEAD) / (1 - DEAD)
+    const head = seen ? { turn: past(seen.yaw), nod: past(seen.pitch) } : { turn: 0, nod: 0 }
+    headTurn += (head.turn - headTurn) * (1 - Math.exp(-dt / 0.3))
+    const steering = seen && Math.abs(headTurn) > 0.02
+    if (now <= idleFrom) {
+      const at = v.camera.positionGeographic
+      base = { lng: at.lng, lat: at.lat, height: at.height }
+    } else {
+      // Looking to one's left (the nose to the right of the unmirrored picture: yaw > 0) shows the
+      // west; on its own it spins faster in a temper, slower when sad, and hardly at all asleep
+      const rate = steering ? -headTurn * HEAD_SPIN : SPIN * (1 + 2.5 * shown.angry - 0.5 * shown.sad - 0.85 * shown.sleepy)
+      base.lng += rate * dt
+      if (seen) {
+        // Looking up (the nose higher up the face: pitch < 0) tips the north towards one
+        const want = Math.max(-65, Math.min(65, START.lat - head.nod * HEAD_TILT))
+        base.lat += (want - base.lat) * (1 - Math.exp(-dt / 0.6))
+      }
+
+      // The mood's body language, over that: a surprise jumps it closer (on a spring, so it
+      // overshoots), joy bounces it, sadness sinks it low in the frame, temper shakes it, and
+      // sleep nods it from side to side
+      zoomV += ((1 - 0.32 * shown.surprised - zoom) * 120 - zoomV * 11) * dt
+      zoom += zoomV * dt
+      const bounce = 0.08 * shown.happy * Math.abs(Math.sin(t * 5.5))
+      const shake = shown.angry
+      v.setCamera({
+        lng: base.lng + (Math.random() - 0.5) * 0.9 * shake,
+        lat: base.lat + (Math.random() - 0.5) * 0.9 * shake,
+        height: base.height * zoom * (1 - bounce),
+        heading: 0,
+        pitch: -90 + 20 * shown.sad,
+        roll: 12 * shown.sleepy * Math.sin(t * 0.9) + (Math.random() - 0.5) * 3 * shake,
+      })
+    }
+
+    // The air's glow and the stars, round where the globe is on screen
+    const cam = v.camera.raw
+    const c = globeAt.set(0, 0, 0).project(cam)
+    const e = v.camera.positionECEF
+    const dist = Math.hypot(e.x, e.y, e.z)
+    const radius = Math.tan(Math.asin(Math.min(1, 6_371_000 / dist))) / Math.tan(((v.camera.fov ?? 60) * Math.PI) / 360) / 2
+    const glow = 0.55 * shown.calm + 1.1 * shown.happy + 0.3 * shown.sad + (1.2 + 0.35 * Math.sin(t * 13)) * shown.angry + shown.surprised + 0.45 * shown.sleepy
+    const stars = shown.sleepy + 0.15 * shown.calm + 0.3 * shown.surprised
+    // The cities show only at night, lit
+    const lit = shown.sleepy
+    recolor.setSky(c.x * 0.5 + 0.5, c.y * 0.5 + 0.5, radius, container.value!.clientWidth / container.value!.clientHeight, glow, stars, lit, t)
   }
   loading.value = false
   frame = requestAnimationFrame(step)
@@ -234,6 +307,9 @@ onBeforeUnmount(() => {
     <div ref="container" class="map-canvas" />
     <figure class="face" :class="{ live: camState === 'on' }">
       <canvas ref="faceEl" />
+      <figcaption class="reading" :class="reading.mood" aria-live="polite">
+        {{ MOOD_NAMES[reading.mood] }} <span>{{ Math.round(reading.share * 100) }}%</span>
+      </figcaption>
       <button
         type="button"
         class="cam"
@@ -275,6 +351,25 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.reading {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 3px 10px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #5a3a24;
+  background: rgba(255, 248, 238, 0.9);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.reading span {
+  font-weight: 500;
+  opacity: 0.7;
 }
 
 .cam {
