@@ -45,8 +45,8 @@ const SIZE = 8
 // Early afternoon in late October in Japan (13:30 JST): the sun in the south-south-west, low
 // enough for long shadows off the heaps
 const DATE = new Date('2025-10-25T04:30:00Z')
-// Cycling through the kinds until someone picks one (s per kind)
-const CYCLE_S = 9
+// Cycling through the kinds until someone picks one: how long (s) a showing holds once its heaps are down
+const CYCLE_S = 3
 // A quiet backdrop for the fruit: a light world map under the sky, Japan in pale stone; the sun's
 // colour from the atmosphere, the fill cool
 const BACKGROUND = '#cfe2f3'
