@@ -19,8 +19,9 @@ const dataBase = `${baseURL}data/day28`
 
 // The globe, seen whole, turning slowly (°/s) when no one is turning it
 const START = { lng: 138, lat: 22 }
-// How much of the screen's narrower side the globe spans, and the most it ever does (a surprise
-// jumps it closer, joy bounces it: never so far it leaves the screen)
+// How much of the screen's height the globe spans, and the most it ever does (a surprise jumps
+// it closer, joy bounces it). By the height alone: on an upright phone the globe runs off the sides,
+// big, rather than shrinking to fit the width
 const FILL = 0.8
 const FILL_MAX = 0.92
 const EARTH_R = 6_371_000
@@ -99,11 +100,9 @@ onMounted(async () => {
   // The globe as a surface (the ellipsoid), for the countries to drape on and to write depth
   v.addLayer({ type: 'terrain', ellipsoid: {} })
   v.globe.color = key('ocean')
-  // The camera's height above the ground at which the whole globe fits the screen, across and
-  // down (a phone held upright is narrower than it is tall)
+  // The camera's height above the ground at which the globe spans that much of the screen's height
   const fitHeight = (fill = FILL) => {
-    const el = container.value!
-    const tanHalf = Math.tan((v.camera.raw.fov * Math.PI) / 360) * Math.min(1, el.clientWidth / Math.max(1, el.clientHeight))
+    const tanHalf = Math.tan((v.camera.raw.fov * Math.PI) / 360)
     const angle = Math.atan(tanHalf * fill)
     return EARTH_R / Math.sin(angle) - EARTH_R
   }
@@ -123,10 +122,10 @@ onMounted(async () => {
   // rivers, then coasts and borders on top
   const lines = v.addSource({ type: 'geojson', url: `${dataBase}/lines.geojson` })
   const LINES: Record<string, { color: Color; width: number; height: number }> = {
-    grid: { color: key('grid'), width: 0.8, height: 1_000 },
-    river: { color: key('water'), width: 1, height: 2_000 },
-    border: { color: key('border'), width: 0.9, height: 3_000 },
-    coast: { color: key('border'), width: 1.3, height: 3_000 },
+    grid: { color: key('grid'), width: 0.8, height: 150 },
+    river: { color: key('river'), width: 1, height: 300 },
+    border: { color: key('border'), width: 0.9, height: 450 },
+    coast: { color: key('border'), width: 1.3, height: 450 },
   }
   for (const [kind, style] of Object.entries(LINES)) {
     const layer = v.addLayer({
@@ -141,16 +140,17 @@ onMounted(async () => {
     })
   }
 
-  // The biggest cities, by size: shown only at night, as lights (see MoodRecolorEffectDesc)
+  // The biggest cities, by size: shown only at night, as lights (see MoodRecolorEffectDesc). Sized
+  // on the ground, so they shrink with the globe on a small screen
   const cities = v.addSource({ type: 'geojson', url: `${dataBase}/cities.geojson` })
   const cityColor = key('city')
   const cityLayer = v.addLayer({
     type: 'vector',
     source: cities,
-    point: { color: cityColor, size: 4, sizeInMeters: false, clampToGround: false, height: 8_000, offsetDepth: false, declutter: false },
+    point: { color: cityColor, size: 60_000, sizeInMeters: true, clampToGround: false, height: 8_000, offsetDepth: false, declutter: false },
   })
   cityLayer.on('featureUpdated', ({ evaluator }) => {
-    evaluator.evaluate(({ properties }) => ({ color: cityColor, size: 2.5 + Math.sqrt(Number(properties?.['pop'] ?? 0) / 1e6) * 1.6 }), {
+    evaluator.evaluate(({ properties }) => ({ color: cityColor, size: 35_000 + Math.sqrt(Number(properties?.['pop'] ?? 0) / 1e6) * 22_000 }), {
       filters: ['pop'],
     })
   })
@@ -167,6 +167,8 @@ onMounted(async () => {
   v.registerEffect('moodRecolor', MoodRecolorEffectDesc)
   const recolorConfig: MoodRecolorConfig = { moodRecolor: {} }
   const recolor = v.addEffect<MoodRecolorEffectDesc>(recolorConfig).ref
+  // Antialiasing on the repainted picture (the keys can't be smoothed: a blend is no key)
+  v.addEffect({ smaa: {} })
   // (three's colours, for the effect's uniforms: Navara's Color is another class)
   const pal = Object.fromEntries(ROLES.map((k) => [k, new ThreeColor()])) as Record<Role, ThreeColor>
   const paint = (w: Weights) => {
@@ -216,14 +218,23 @@ onMounted(async () => {
     if (face?.ready) {
       // The camera's picture, mirrored; blurred whole whenever no face is found in it, so a face
       // the landmarker misses is never shown bare
+      // Its own shape kept, filling the panel and cropped (a phone's front camera is upright, a
+      // webcam often 16:9); the crop is centred, so mirroring it keeps it where it is
+      const vw = face.video.videoWidth || W
+      const vh = face.video.videoHeight || H
+      const fit = Math.max(W / vw, H / vh)
+      const dw = vw * fit
+      const dh = vh * fit
+      const ox = (W - dw) / 2
+      const oy = (H - dh) / 2
       pctx.save()
       pctx.filter = seen ? 'none' : 'blur(14px)'
       pctx.translate(W, 0)
       pctx.scale(-1, 1)
-      pctx.drawImage(face.video, 0, 0, W, H)
+      pctx.drawImage(face.video, ox, oy, dw, dh)
       pctx.restore()
       if (seen) {
-        const m = (p: [number, number]): [number, number] => [(1 - p[0]) * W, p[1] * H]
+        const m = (p: [number, number]): [number, number] => [ox + (1 - p[0]) * dw, oy + p[1] * dh]
         const top = m(seen.top)
         const chin = m(seen.chin)
         const a = m(seen.right)

@@ -30,9 +30,12 @@ export const KEYS = {
   landD: '#00ffff',
   ice: '#000080',
   water: '#0000ff',
+  // Lines come out at about half strength (they are lit), so a river can't be blue (dim blue is
+  // ice): it is cyan, dim, apart from the full cyan of the fourth land shade
+  river: '#00ffff',
   border: '#ff00ff',
   city: '#800000',
-} as const satisfies Partial<Record<Role, string>>
+} as const satisfies Partial<Record<Role | 'river', string>>
 
 const uniform = (r: Role) => `u_${r}`
 
@@ -71,7 +74,7 @@ const fragmentShader = /* glsl */ `
     // A city only where the key is clean (dim, pure red): where two parts' colours blend at an
     // edge, a red and something darker can come out dim red too
     bool city = dim && hi > 0.12 && hi < 0.35 && sat > 0.9 && abs(h - (h > 3.0 ? 6.0 : 0.0)) < 0.25;
-    return k == 0 ? (city ? 9 : 2) : k == 1 ? 3 : k == 2 ? 4 : k == 3 ? 5 : k == 4 ? (dim ? 6 : 7) : 8;
+    return k == 0 ? (city ? 9 : 2) : k == 1 ? 3 : k == 2 ? 4 : k == 3 ? (dim ? 7 : 5) : k == 4 ? (dim ? 6 : 7) : 8;
   }
 
   vec3 paint(int p) {
@@ -103,9 +106,19 @@ const fragmentShader = /* glsl */ `
     vec2 px = 1.0 / resolution;
     if (p == 9) {
       // A city: lit, or (when the cities are out) the ground round it, read a few pixels off
-      int under = part(texture2D(inputBuffer, uv + vec2(7.0, 0.0) * px).rgb);
-      if (under == 9) under = part(texture2D(inputBuffer, uv - vec2(7.0, 0.0) * px).rgb);
-      if (under == 9) under = 0;
+      // (cities crowd together, and stand on the coast: look round, further out, for land first —
+      // a city is on land — and take the sea only if no land shows)
+      int under = 9;
+      int sea = 9;
+      for (int j = 1; j <= 5 && under == 9; j++) {
+        for (int i = 0; i < 8 && under == 9; i++) {
+          float a = float(i) * 0.785398 + float(j) * 0.4;
+          int p2 = part(texture2D(inputBuffer, uv + vec2(cos(a), sin(a)) * float(j) * 5.0 * px).rgb);
+          if (p2 >= 2 && p2 <= 6) under = p2;
+          else if (p2 == 0 || p2 == 7) sea = p2;
+        }
+      }
+      if (under == 9) under = sea == 9 ? 2 : sea;
       col = mix(paint(under), u_city * 1.4, uCities);
     } else {
       col = paint(p);
