@@ -19,7 +19,11 @@ const dataBase = `${baseURL}data/day28`
 
 // The globe, seen whole, turning slowly (°/s) when no one is turning it
 const START = { lng: 138, lat: 22 }
-const HEIGHT = 11_500_000
+// How much of the screen's narrower side the globe spans, and the most it ever does (a surprise
+// jumps it closer, joy bounces it: never so far it leaves the screen)
+const FILL = 0.8
+const FILL_MAX = 0.92
+const EARTH_R = 6_371_000
 const SPIN = 3
 const IDLE_S = 6
 // The head turns it too, in front of the camera: look left or right and it spins that way (°/s at
@@ -31,6 +35,9 @@ const DEAD = 0.18
 
 const container = ref<HTMLDivElement>()
 const faceEl = ref<HTMLCanvasElement>()
+// ?mood= holds the plush's demo on one mood (for stills)
+const holdQuery = useRoute().query.mood as string | undefined
+const hold = MOODS.includes(holdQuery as Mood) ? (holdQuery as Mood) : undefined
 // What the face reads as: the strongest mood now, and how strongly (0-1)
 const reading = ref<{ mood: Mood; share: number }>({ mood: 'calm', share: 1 })
 const MOOD_NAMES: Record<Mood, string> = {
@@ -43,6 +50,7 @@ const MOOD_NAMES: Record<Mood, string> = {
 }
 const loading = ref(true)
 let view: ThreeView<DefaultDescriptions> | undefined
+const unmount: (() => void)[] = []
 let frame = 0
 
 // The camera: off (the plush acts by itself), starting, on, or refused
@@ -91,7 +99,15 @@ onMounted(async () => {
   // The globe as a surface (the ellipsoid), for the countries to drape on and to write depth
   v.addLayer({ type: 'terrain', ellipsoid: {} })
   v.globe.color = key('ocean')
-  v.setCamera({ ...START, height: HEIGHT, heading: 0, pitch: -90, roll: 0 })
+  // The camera's height above the ground at which the whole globe fits the screen, across and
+  // down (a phone held upright is narrower than it is tall)
+  const fitHeight = (fill = FILL) => {
+    const el = container.value!
+    const tanHalf = Math.tan((v.camera.raw.fov * Math.PI) / 360) * Math.min(1, el.clientWidth / Math.max(1, el.clientHeight))
+    const angle = Math.atan(tanHalf * fill)
+    return EARTH_R / Math.sin(angle) - EARTH_R
+  }
+  v.setCamera({ ...START, height: fitHeight(), heading: 0, pitch: -90, roll: 0 })
 
   // The countries, draped on the globe in their four shades (ice apart), and the lakes
   const shades = [key('landA'), key('landB'), key('landC'), key('landD'), key('ice')]
@@ -166,7 +182,15 @@ onMounted(async () => {
   let headTurn = 0
   let lastLabel = 0
   // What the head, the hands and the spin move; and the surprise's springy zoom
-  let base = { ...START, height: HEIGHT }
+  let base = { ...START, height: fitHeight() }
+  // A new shape of screen (a phone turned, a window resized): fit the globe again
+  let nearest = fitHeight(FILL_MAX)
+  const refit = () => {
+    base.height = fitHeight()
+    nearest = fitHeight(FILL_MAX)
+  }
+  window.addEventListener('resize', refit)
+  unmount.push(() => window.removeEventListener('resize', refit))
   let zoom = 1
   let zoomV = 0
   const globeAt = new Vector3()
@@ -221,7 +245,7 @@ onMounted(async () => {
       } else shapes = {}
     } else {
       // No camera: the plush on its own, acting the moods out, on the sky of the moment
-      const demo = demoFace(t)
+      const demo = demoFace(t, hold)
       const [r, g, b] = blend(shown).sky.map((x) => Math.round(x * 255))
       pctx.fillStyle = `rgb(${r}, ${g}, ${b})`
       pctx.fillRect(0, 0, W, H)
@@ -261,7 +285,7 @@ onMounted(async () => {
       }
 
       // The mood's body language, over that: a surprise jumps it closer (on a spring, so it
-      // overshoots), joy bounces it, sadness sinks it low in the frame, temper shakes it, and
+      // overshoots), joy bounces it, sadness shrinks it and sinks it low in the frame, temper shakes it, and
       // sleep nods it from side to side
       zoomV += ((1 - 0.32 * shown.surprised - zoom) * 120 - zoomV * 11) * dt
       zoom += zoomV * dt
@@ -270,9 +294,9 @@ onMounted(async () => {
       v.setCamera({
         lng: base.lng + (Math.random() - 0.5) * 0.9 * shake,
         lat: base.lat + (Math.random() - 0.5) * 0.9 * shake,
-        height: base.height * zoom * (1 - bounce),
+        height: Math.max(nearest, base.height * zoom * (1 - bounce) * (1 + 0.25 * shown.sad)),
         heading: 0,
-        pitch: -90 + 20 * shown.sad,
+        pitch: -90 + 5 * shown.sad,
         roll: 12 * shown.sleepy * Math.sin(t * 0.9) + (Math.random() - 0.5) * 3 * shake,
       })
     }
@@ -282,7 +306,7 @@ onMounted(async () => {
     const c = globeAt.set(0, 0, 0).project(cam)
     const e = v.camera.positionECEF
     const dist = Math.hypot(e.x, e.y, e.z)
-    const radius = Math.tan(Math.asin(Math.min(1, 6_371_000 / dist))) / Math.tan(((v.camera.fov ?? 60) * Math.PI) / 360) / 2
+    const radius = Math.tan(Math.asin(Math.min(1, 6_371_000 / dist))) / Math.tan((v.camera.raw.fov * Math.PI) / 360) / 2
     const glow = 0.55 * shown.calm + 1.1 * shown.happy + 0.3 * shown.sad + (1.2 + 0.35 * Math.sin(t * 13)) * shown.angry + shown.surprised + 0.45 * shown.sleepy
     const stars = shown.sleepy + 0.15 * shown.calm + 0.3 * shown.surprised
     // The cities show only at night, lit
@@ -295,6 +319,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(frame)
+  unmount.forEach((f) => f())
   face?.stop()
   face = undefined
   view?.dispose()

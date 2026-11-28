@@ -230,10 +230,11 @@ const DEMO: Record<Mood, Record<string, number>> = {
 }
 const HOLD_S = 3.2
 
-export function demoFace(t: number): { shapes: Record<string, number>; yaw: number; pitch: number; roll: number } {
+/** The demo's face at `t` (s); `hold` keeps it on one mood (for stills) */
+export function demoFace(t: number, hold?: Mood): { shapes: Record<string, number>; yaw: number; pitch: number; roll: number } {
   const n = MOODS.length
-  const i = Math.floor(t / HOLD_S) % n
-  const f = Math.min(1, (t % HOLD_S) / 0.6)
+  const i = hold ? MOODS.indexOf(hold) : Math.floor(t / HOLD_S) % n
+  const f = hold ? 1 : Math.min(1, (t % HOLD_S) / 0.6)
   const e = f * f * (3 - 2 * f)
   const from = DEMO[MOODS[(i + n - 1) % n]!]
   const to = DEMO[MOODS[i]!]

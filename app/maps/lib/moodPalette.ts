@@ -153,7 +153,8 @@ export function moodsOf(b: Record<string, number>): Weights {
   const sneer = avg('noseSneerLeft', 'noseSneerRight')
   const raw: Omit<Weights, 'calm'> = {
     happy: past(smile, 0.12, 0.45),
-    sad: past(frown * 1.2 + g('browInnerUp') * 0.5 - smile, 0.08, 0.4),
+    // (the inner brows lift in surprise too: they count for sadness only with the mouth shut)
+    sad: past(frown * 1.2 + g('browInnerUp') * 0.5 * Math.max(0, 1 - jaw * 2.5) - smile, 0.08, 0.4),
     angry: past(browDown + sneer * 0.5, 0.12, 0.45),
     surprised: past(jaw * 0.7 + browUp * 0.5 + wide * 0.4, 0.2, 0.55),
     sleepy: past(blink, 0.35, 0.7),
